@@ -12,9 +12,9 @@ pub enum BeforeOffset {
 
 trait Store {
     fn add_message(&mut self, message: Message) -> Result<usize>;
-    fn get_message(&self, source_id: &str, id: usize) -> Result<Option<Message>>;
+    fn get_message(&mut self, source_id: &str, id: usize) -> Result<Option<Message>>;
     fn get_first(
-        &self,
+        &mut self,
         source_id: &str,
         keyframe_uuid: Uuid,
         before: BeforeOffset,
@@ -45,12 +45,12 @@ mod tests {
             Ok(current_len)
         }
 
-        fn get_message(&self, _: &str, id: usize) -> Result<Option<Message>> {
+        fn get_message(&mut self, _: &str, id: usize) -> Result<Option<Message>> {
             Ok(Some(self.messages[id].clone()))
         }
 
         fn get_first(
-            &self,
+            &mut self,
             _: &str,
             keyframe_uuid: Uuid,
             before: BeforeOffset,
