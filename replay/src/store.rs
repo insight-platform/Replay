@@ -1,4 +1,3 @@
-mod mongodb;
 mod rocksdb;
 
 use anyhow::Result;
@@ -7,12 +6,18 @@ use uuid::Uuid;
 
 pub enum BeforeOffset {
     Blocks(usize),
-    Seconds(u64),
+    Seconds(f64),
 }
 
-trait Store {
-    fn add_message(&mut self, message: Message) -> Result<usize>;
-    fn get_message(&mut self, source_id: &str, id: usize) -> Result<Option<Message>>;
+pub trait Store {
+    fn add_message(&mut self, message: Message, topic: &[u8], data: &[Vec<u8>]) -> Result<usize>;
+
+    fn get_message(
+        &mut self,
+        source_id: &str,
+        id: usize,
+    ) -> Result<Option<(Message, Vec<u8>, Vec<Vec<u8>>)>>;
+
     fn get_first(
         &mut self,
         source_id: &str,
@@ -33,7 +38,12 @@ mod tests {
     }
 
     impl Store for SampleStore {
-        fn add_message(&mut self, message: Message) -> Result<usize> {
+        fn add_message(
+            &mut self,
+            message: Message,
+            _topic: &[u8],
+            _data: &[Vec<u8>],
+        ) -> Result<usize> {
             let current_len = self.messages.len();
             if message.is_video_frame() {
                 let f = message.as_video_frame().unwrap();
@@ -45,8 +55,12 @@ mod tests {
             Ok(current_len)
         }
 
-        fn get_message(&mut self, _: &str, id: usize) -> Result<Option<Message>> {
-            Ok(Some(self.messages[id].clone()))
+        fn get_message(
+            &mut self,
+            _: &str,
+            id: usize,
+        ) -> Result<Option<(Message, Vec<u8>, Vec<Vec<u8>>)>> {
+            Ok(Some((self.messages[id].clone(), vec![], vec![])))
         }
 
         fn get_first(
@@ -75,7 +89,8 @@ mod tests {
                         .unwrap();
                     let current_pts = frame.get_pts() as u64;
                     let time_base = frame.get_time_base();
-                    let before_scaled = seconds_before * time_base.1 as u64 / time_base.0 as u64;
+                    let before_scaled =
+                        (seconds_before * time_base.1 as f64 / time_base.0 as f64) as u64;
                     let mut i = self.keyframes[idx].1 - 1;
                     while i > 0 {
                         if self.messages[i].is_video_frame() {
@@ -106,62 +121,75 @@ mod tests {
         f.set_keyframe(Some(true));
         f.set_time_base((1, 1));
         f.set_pts(0);
-        store.add_message(f.to_message())?;
-        store.add_message(Message::end_of_stream(EndOfStream::new(String::from(""))))?;
+        store.add_message(f.to_message(), &[], &[])?;
+        store.add_message(
+            Message::end_of_stream(EndOfStream::new(String::from(""))),
+            &[],
+            &[],
+        )?;
         let mut f = gen_frame();
         f.set_keyframe(Some(false));
         f.set_time_base((1, 1));
         f.set_pts(1);
-        store.add_message(f.to_message())?;
+        store.add_message(f.to_message(), &[], &[])?;
 
         let mut f = gen_frame();
         f.set_keyframe(Some(false));
         f.set_time_base((1, 1));
         f.set_pts(2);
-        store.add_message(f.to_message())?;
+        store.add_message(f.to_message(), &[], &[])?;
 
         let mut f = gen_frame();
         f.set_keyframe(Some(true));
         f.set_time_base((1, 1));
         f.set_pts(3);
-        store.add_message(f.to_message())?;
-        store.add_message(Message::end_of_stream(EndOfStream::new(String::from(""))))?;
+        store.add_message(f.to_message(), &[], &[])?;
+        store.add_message(
+            Message::end_of_stream(EndOfStream::new(String::from(""))),
+            &[],
+            &[],
+        )?;
         let mut f = gen_frame();
         f.set_keyframe(Some(false));
         f.set_time_base((1, 1));
         f.set_pts(4);
-        store.add_message(f.to_message())?;
+        store.add_message(f.to_message(), &[], &[])?;
 
         let mut f = gen_frame();
         let u = f.get_uuid();
         f.set_keyframe(Some(true));
         f.set_time_base((1, 1));
         f.set_pts(5);
-        store.add_message(f.to_message())?;
+        store.add_message(f.to_message(), &[], &[])?;
 
         let mut f = gen_frame();
         f.set_keyframe(Some(false));
         f.set_time_base((1, 1));
         f.set_pts(6);
-        store.add_message(f.to_message())?;
+        store.add_message(f.to_message(), &[], &[])?;
 
         let first = store.get_first("", u, BeforeOffset::Blocks(1))?;
         assert_eq!(first, Some(4));
-        let m = store.get_message("", first.unwrap())?;
+        let (m, _, _) = store.get_message("", first.unwrap())?.unwrap();
         assert!(matches!(
-            m.unwrap().as_video_frame().unwrap().get_keyframe(),
+            m.as_video_frame().unwrap().get_keyframe(),
             Some(true)
         ));
 
-        let first_ts = store.get_first("", u, BeforeOffset::Seconds(5))?;
+        let first_ts = store.get_first("", u, BeforeOffset::Seconds(5.0))?;
         assert_eq!(first_ts, Some(0));
-        let m = store.get_message("", first_ts.unwrap())?;
+        let (m, _, _) = store.get_message("", first_ts.unwrap())?.unwrap();
 
         assert!(matches!(
-            m.unwrap().as_video_frame().unwrap().get_keyframe(),
+            m.as_video_frame().unwrap().get_keyframe(),
             Some(true)
         ));
 
         Ok(())
     }
+}
+
+#[cfg(test)]
+pub fn to_hex_string(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{:02x}", byte)).collect()
 }

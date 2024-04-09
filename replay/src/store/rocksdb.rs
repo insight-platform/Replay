@@ -1,9 +1,10 @@
 use crate::store::BeforeOffset;
 use anyhow::{bail, Result};
+use bincode::config::{BigEndian, Configuration};
 use bincode::{Decode, Encode};
 use hashbrown::HashMap;
 use md5::{Digest, Md5};
-use rocksdb::{ColumnFamilyDescriptor, Options, SliceTransform, DB};
+use rocksdb::{ColumnFamilyDescriptor, Direction, Options, ReadOptions, SliceTransform, DB};
 use savant_core::message::{load_message, save_message, Message};
 use std::mem::size_of;
 use std::path::Path;
@@ -37,6 +38,13 @@ struct MessageKey {
 }
 
 #[derive(Encode, Decode, PartialEq, Debug)]
+struct MessageValue {
+    message: Vec<u8>,
+    topic: Vec<u8>,
+    data: Vec<Vec<u8>>,
+}
+
+#[derive(Encode, Decode, PartialEq, Debug)]
 struct IndexKey {
     pub(crate) source_md5: [u8; 16],
 }
@@ -56,13 +64,14 @@ struct KeyframeKey {
 #[derive(Encode, Decode, PartialEq, Debug)]
 struct KeyframeValue {
     pub(crate) index: usize,
-    pub(crate) pts: i64,
+    pub(crate) pts: f64,
 }
 
 pub struct RocksStore {
     db: DB,
     source_id_hashes: HashMap<String, [u8; 16]>,
     resident_index_values: HashMap<String, usize>,
+    configuration: Configuration<BigEndian>,
 }
 
 impl RocksStore {
@@ -90,12 +99,12 @@ impl RocksStore {
             source_md5: self.get_source_hash(source_id)?,
         };
 
-        let key_bytes = bincode::encode_to_vec(&key, bincode::config::standard())?;
+        let key_bytes = bincode::encode_to_vec(&key, self.configuration.clone())?;
         let cf = self.db.cf_handle(CF_INDEX_DB).unwrap();
         let value_bytes = self.db.get_cf(cf, &key_bytes)?;
         let value = if let Some(value_bytes) = value_bytes {
             let value: IndexValue =
-                bincode::decode_from_slice(&value_bytes, bincode::config::standard())?.0;
+                bincode::decode_from_slice(&value_bytes, self.configuration.clone())?.0;
             value.index
         } else {
             0
@@ -106,6 +115,8 @@ impl RocksStore {
         Ok(value)
     }
     pub fn new(path: &str, ttl: Duration) -> Result<Self> {
+        let configuration = bincode::config::standard().with_big_endian();
+
         let mut cf_opts = Options::default();
         cf_opts.set_max_write_buffer_number(16);
         cf_opts.set_prefix_extractor(SliceTransform::create_fixed_prefix(
@@ -139,6 +150,7 @@ impl RocksStore {
             db,
             source_id_hashes: HashMap::new(),
             resident_index_values: HashMap::new(),
+            configuration,
         })
     }
 
@@ -152,7 +164,7 @@ impl RocksStore {
 }
 
 impl super::Store for RocksStore {
-    fn add_message(&mut self, message: Message) -> Result<usize> {
+    fn add_message(&mut self, message: Message, topic: &[u8], data: &[Vec<u8>]) -> Result<usize> {
         let mut frame_opt = None;
         let source_id = if message.is_video_frame() {
             let frame = message.as_video_frame().unwrap();
@@ -174,28 +186,36 @@ impl super::Store for RocksStore {
         let index = self.current_index_value(&source_id)?;
         let mut batch = rocksdb::WriteBatch::default();
 
-        let key = MessageKey {
+        let message_key = MessageKey {
             source_md5: source_hash,
             index,
         };
-        let key_bytes = bincode::encode_to_vec(&key, bincode::config::standard())?;
-        let value_bytes = save_message(&message)?;
+
+        let message_value = MessageValue {
+            message: save_message(&message)?,
+            topic: topic.to_vec(),
+            data: data.to_vec(),
+        };
+
+        let message_key_bytes = bincode::encode_to_vec(&message_key, self.configuration.clone())?;
+        let message_value_bytes =
+            bincode::encode_to_vec(&message_value, self.configuration.clone())?;
         let cf = self
             .db
             .cf_handle(CF_MESSAGE_DB)
             .expect("CF_MESSAGE_DB not found");
+        batch.put_cf(cf, &message_key_bytes, &message_value_bytes);
 
         if let Some(f) = frame_opt {
             let key = KeyframeKey {
                 source_md5: source_hash,
                 keyframe_uuid: f.get_uuid_u128(),
             };
-            let key_bytes = bincode::encode_to_vec(&key, bincode::config::standard())?;
-            let value = KeyframeValue {
-                index,
-                pts: f.get_pts(),
-            };
-            let value_bytes = bincode::encode_to_vec(&value, bincode::config::standard())?;
+            let key_bytes = bincode::encode_to_vec(&key, self.configuration.clone())?;
+            let (time_base_nom, time_base_denom) = f.get_time_base();
+            let pts = f.get_pts() as f64 * time_base_nom as f64 / time_base_denom as f64;
+            let value = KeyframeValue { index, pts };
+            let value_bytes = bincode::encode_to_vec(&value, self.configuration.clone())?;
             let cf = self
                 .db
                 .cf_handle(CF_KEYFRAME_DB)
@@ -203,16 +223,14 @@ impl super::Store for RocksStore {
             batch.put_cf(cf, &key_bytes, &value_bytes);
         }
 
-        batch.put_cf(cf, &key_bytes, &value_bytes);
-
         let index_key = IndexKey {
             source_md5: source_hash,
         };
 
         let index_value = IndexValue { index: index + 1 };
 
-        let index_key_bytes = bincode::encode_to_vec(&index_key, bincode::config::standard())?;
-        let index_value_bytes = bincode::encode_to_vec(&index_value, bincode::config::standard())?;
+        let index_key_bytes = bincode::encode_to_vec(&index_key, self.configuration.clone())?;
+        let index_value_bytes = bincode::encode_to_vec(&index_value, self.configuration.clone())?;
         let cf = self
             .db
             .cf_handle(CF_INDEX_DB)
@@ -220,25 +238,31 @@ impl super::Store for RocksStore {
         batch.put_cf(cf, &index_key_bytes, &index_value_bytes);
 
         self.db.write(batch)?;
-
+        self.resident_index_values.insert(source_id, index + 1);
         Ok(index)
     }
 
-    fn get_message(&mut self, source_id: &str, id: usize) -> Result<Option<Message>> {
+    fn get_message(
+        &mut self,
+        source_id: &str,
+        id: usize,
+    ) -> Result<Option<(Message, Vec<u8>, Vec<Vec<u8>>)>> {
         let source_hash = self.get_source_hash(source_id)?;
         let key = MessageKey {
             source_md5: source_hash,
             index: id,
         };
-        let key_bytes = bincode::encode_to_vec(&key, bincode::config::standard())?;
+        let key_bytes = bincode::encode_to_vec(&key, self.configuration.clone())?;
         let cf = self
             .db
             .cf_handle(CF_MESSAGE_DB)
             .expect("CF_MESSAGE_DB not found");
         let value_bytes = self.db.get_cf(cf, &key_bytes)?;
         if let Some(value_bytes) = value_bytes {
-            let message = load_message(&value_bytes);
-            Ok(Some(message))
+            let message_value: MessageValue =
+                bincode::decode_from_slice(&value_bytes, self.configuration.clone())?.0;
+            let message = load_message(&message_value.message);
+            Ok(Some((message, message_value.topic, message_value.data)))
         } else {
             Ok(None)
         }
@@ -246,11 +270,70 @@ impl super::Store for RocksStore {
 
     fn get_first(
         &mut self,
-        _source_id: &str,
-        _keyframe_uuid: Uuid,
-        _before: BeforeOffset,
+        source_id: &str,
+        keyframe_uuid: Uuid,
+        before: BeforeOffset,
     ) -> Result<Option<usize>> {
-        todo!()
+        let source_hash = self.get_source_hash(source_id)?;
+        let key = KeyframeKey {
+            source_md5: source_hash,
+            keyframe_uuid: keyframe_uuid.as_u128(),
+        };
+        let key_bytes = bincode::encode_to_vec(&key, self.configuration.clone())?;
+        let cf = self
+            .db
+            .cf_handle(CF_KEYFRAME_DB)
+            .expect("CF_KEYFRAME_DB not found");
+        let value_bytes = self.db.get_cf(cf, &key_bytes)?;
+
+        if let Some(value_bytes) = value_bytes {
+            let value: KeyframeValue =
+                bincode::decode_from_slice(&value_bytes, self.configuration.clone())?.0;
+
+            let req_index = value.index;
+            let req_pts = value.pts;
+
+            let cf = self
+                .db
+                .cf_handle(CF_KEYFRAME_DB)
+                .expect("CF_KEYFRAME_DB not found");
+
+            let key_bytes = bincode::encode_to_vec(&key, self.configuration.clone())?;
+
+            let mut opts = ReadOptions::default();
+            opts.set_prefix_same_as_start(true);
+            let mut iter = self.db.iterator_cf_opt(
+                cf,
+                opts,
+                rocksdb::IteratorMode::From(&key_bytes, Direction::Reverse),
+            );
+
+            let mut current_index = req_index;
+            while let Some(res) = iter.next() {
+                let (_, v) = res?;
+                let value: KeyframeValue =
+                    bincode::decode_from_slice(&v, self.configuration.clone())?.0;
+
+                current_index = value.index;
+                let current_pts = value.pts;
+
+                match before {
+                    BeforeOffset::Blocks(blocks_before) => {
+                        if req_index - current_index >= blocks_before {
+                            break;
+                        }
+                    }
+                    BeforeOffset::Seconds(seconds_before) => {
+                        if req_pts - current_pts >= seconds_before {
+                            break;
+                        }
+                    }
+                }
+            }
+            Ok(Some(current_index))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -258,7 +341,9 @@ impl super::Store for RocksStore {
 mod tests {
     use super::*;
     use crate::store::Store;
+    use savant_core::primitives::rust::VideoFrameProxy;
     use savant_core::test::gen_frame;
+    use std::time::SystemTime;
 
     #[test]
     fn test_rocksdb_init() -> Result<()> {
@@ -295,22 +380,97 @@ mod tests {
         {
             let mut db = RocksStore::new(path, Duration::from_secs(60))?;
             let m = frame.to_message();
-            let id = db.add_message(m.clone())?;
-            let m2 = db.get_message(&source_id, id)?;
+            let id = db.add_message(m.clone(), &[], &[])?;
+            let (m2, _, _) = db.get_message(&source_id, id)?.unwrap();
             assert_eq!(
                 m.as_video_frame().unwrap().get_uuid_u128(),
-                m2.unwrap().as_video_frame().unwrap().get_uuid_u128()
+                m2.as_video_frame().unwrap().get_uuid_u128()
             );
         }
         {
             let mut db = RocksStore::new(path, Duration::from_secs(60))?;
-            let m = db.get_message(&source_id, 0)?;
-            assert!(m.is_some());
+            let (_, _, _) = db.get_message(&source_id, 0)?.unwrap();
             assert_eq!(db.current_index_value(&source_id)?, 1);
             let m = db.get_message(&source_id, 1)?;
             assert!(m.is_none());
         }
         let _ = RocksStore::remove_db(path);
+        Ok(())
+    }
+
+    fn gen_properly_filled_frame() -> VideoFrameProxy {
+        let mut f = gen_frame();
+        let (tbn, tbd) = (1, 1000_000);
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_micros() as f64
+            / 1_000_000.0;
+        let pts = (now * tbd as f64 / tbn as f64) as i64;
+        f.set_pts(pts);
+        f.set_time_base((tbn, tbd));
+        f.set_keyframe(Some(true));
+        f
+    }
+
+    #[test]
+    fn test_find_first_block_in_blocks() -> Result<()> {
+        let dir = tempfile::TempDir::new()?;
+        let path = dir.path().to_str().unwrap();
+        let mut db = RocksStore::new(path, Duration::from_secs(60)).unwrap();
+        let f = gen_properly_filled_frame();
+        let source_id = f.get_source_id();
+        db.add_message(f.to_message(), &[], &[]).unwrap();
+        std::thread::sleep(Duration::from_millis(10));
+        let f = gen_properly_filled_frame();
+        db.add_message(f.to_message(), &[], &[]).unwrap();
+        std::thread::sleep(Duration::from_millis(10));
+        let mut other_source_frame = gen_properly_filled_frame();
+        other_source_frame.set_source_id("other_source_id");
+        db.add_message(other_source_frame.to_message(), &[], &[])
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(10));
+        let f = gen_properly_filled_frame();
+        let uuid_f3 = f.get_uuid();
+        db.add_message(f.to_message(), &[], &[]).unwrap();
+
+        let first = db
+            .get_first(&source_id, uuid_f3, BeforeOffset::Blocks(1))
+            .unwrap()
+            .unwrap();
+        assert_eq!(first, 1);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_find_first_block_in_duration() -> Result<()> {
+        let dir = tempfile::TempDir::new()?;
+        let path = dir.path().to_str().unwrap();
+        let mut db = RocksStore::new(path, Duration::from_secs(60)).unwrap();
+        let f = gen_properly_filled_frame();
+        let source_id = f.get_source_id();
+        db.add_message(f.to_message(), &[], &[]).unwrap();
+        std::thread::sleep(Duration::from_millis(10));
+        let f = gen_properly_filled_frame();
+        db.add_message(f.to_message(), &[], &[]).unwrap();
+        std::thread::sleep(Duration::from_millis(10));
+        let f = gen_properly_filled_frame();
+        let uuid_f3 = f.get_uuid();
+        db.add_message(f.to_message(), &[], &[]).unwrap();
+
+        let first = db
+            .get_first(&source_id, uuid_f3, BeforeOffset::Seconds(0.005))
+            .unwrap()
+            .unwrap();
+        assert_eq!(first, 1);
+
+        let first = db
+            .get_first(&source_id, uuid_f3, BeforeOffset::Seconds(0.015))
+            .unwrap()
+            .unwrap();
+        assert_eq!(first, 0);
+
         Ok(())
     }
 }
