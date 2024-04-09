@@ -340,10 +340,8 @@ impl super::Store for RocksStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::Store;
-    use savant_core::primitives::rust::VideoFrameProxy;
+    use crate::store::{gen_properly_filled_frame, Store};
     use savant_core::test::gen_frame;
-    use std::time::SystemTime;
 
     #[test]
     fn test_rocksdb_init() -> Result<()> {
@@ -396,21 +394,6 @@ mod tests {
         }
         let _ = RocksStore::remove_db(path);
         Ok(())
-    }
-
-    fn gen_properly_filled_frame() -> VideoFrameProxy {
-        let mut f = gen_frame();
-        let (tbn, tbd) = (1, 1000_000);
-        let now = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_micros() as f64
-            / 1_000_000.0;
-        let pts = (now * tbd as f64 / tbn as f64) as i64;
-        f.set_pts(pts);
-        f.set_time_base((tbn, tbd));
-        f.set_keyframe(Some(true));
-        f
     }
 
     #[test]

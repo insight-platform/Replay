@@ -1,7 +1,10 @@
-mod rocksdb;
+pub mod rocksdb;
 
 use anyhow::Result;
 use savant_core::message::Message;
+use savant_core::primitives::frame::VideoFrameProxy;
+use savant_core::test::gen_frame;
+use std::time::SystemTime;
 use uuid::Uuid;
 
 pub enum BeforeOffset {
@@ -30,7 +33,6 @@ pub trait Store {
 mod tests {
     use super::*;
     use savant_core::primitives::eos::EndOfStream;
-    use savant_core::test::gen_frame;
 
     struct SampleStore {
         keyframes: Vec<(Uuid, usize)>,
@@ -191,4 +193,20 @@ mod tests {
 
 pub fn to_hex_string(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{:02x}", byte)).collect()
+}
+
+#[cfg(test)]
+pub fn gen_properly_filled_frame() -> VideoFrameProxy {
+    let mut f = gen_frame();
+    let (tbn, tbd) = (1, 1000_000);
+    let now = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_micros() as f64
+        / 1_000_000.0;
+    let pts = (now * tbd as f64 / tbn as f64) as i64;
+    f.set_pts(pts);
+    f.set_time_base((tbn, tbd));
+    f.set_keyframe(Some(true));
+    f
 }
