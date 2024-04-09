@@ -10,7 +10,7 @@ pub enum BeforeOffset {
 }
 
 pub trait Store {
-    fn add_message(&mut self, message: Message, topic: &[u8], data: &[Vec<u8>]) -> Result<usize>;
+    fn add_message(&mut self, message: &Message, topic: &[u8], data: &[Vec<u8>]) -> Result<usize>;
 
     fn get_message(
         &mut self,
@@ -40,7 +40,7 @@ mod tests {
     impl Store for SampleStore {
         fn add_message(
             &mut self,
-            message: Message,
+            message: &Message,
             _topic: &[u8],
             _data: &[Vec<u8>],
         ) -> Result<usize> {
@@ -51,7 +51,7 @@ mod tests {
                     self.keyframes.push((f.get_uuid(), current_len));
                 }
             }
-            self.messages.push(message);
+            self.messages.push(message.clone());
             Ok(current_len)
         }
 
@@ -121,9 +121,9 @@ mod tests {
         f.set_keyframe(Some(true));
         f.set_time_base((1, 1));
         f.set_pts(0);
-        store.add_message(f.to_message(), &[], &[])?;
+        store.add_message(&f.to_message(), &[], &[])?;
         store.add_message(
-            Message::end_of_stream(EndOfStream::new(String::from(""))),
+            &Message::end_of_stream(EndOfStream::new(String::from(""))),
             &[],
             &[],
         )?;
@@ -131,21 +131,21 @@ mod tests {
         f.set_keyframe(Some(false));
         f.set_time_base((1, 1));
         f.set_pts(1);
-        store.add_message(f.to_message(), &[], &[])?;
+        store.add_message(&f.to_message(), &[], &[])?;
 
         let mut f = gen_frame();
         f.set_keyframe(Some(false));
         f.set_time_base((1, 1));
         f.set_pts(2);
-        store.add_message(f.to_message(), &[], &[])?;
+        store.add_message(&f.to_message(), &[], &[])?;
 
         let mut f = gen_frame();
         f.set_keyframe(Some(true));
         f.set_time_base((1, 1));
         f.set_pts(3);
-        store.add_message(f.to_message(), &[], &[])?;
+        store.add_message(&f.to_message(), &[], &[])?;
         store.add_message(
-            Message::end_of_stream(EndOfStream::new(String::from(""))),
+            &Message::end_of_stream(EndOfStream::new(String::from(""))),
             &[],
             &[],
         )?;
@@ -153,20 +153,20 @@ mod tests {
         f.set_keyframe(Some(false));
         f.set_time_base((1, 1));
         f.set_pts(4);
-        store.add_message(f.to_message(), &[], &[])?;
+        store.add_message(&f.to_message(), &[], &[])?;
 
         let mut f = gen_frame();
         let u = f.get_uuid();
         f.set_keyframe(Some(true));
         f.set_time_base((1, 1));
         f.set_pts(5);
-        store.add_message(f.to_message(), &[], &[])?;
+        store.add_message(&f.to_message(), &[], &[])?;
 
         let mut f = gen_frame();
         f.set_keyframe(Some(false));
         f.set_time_base((1, 1));
         f.set_pts(6);
-        store.add_message(f.to_message(), &[], &[])?;
+        store.add_message(&f.to_message(), &[], &[])?;
 
         let first = store.get_first("", u, BeforeOffset::Blocks(1))?;
         assert_eq!(first, Some(4));
@@ -189,7 +189,6 @@ mod tests {
     }
 }
 
-#[cfg(test)]
 pub fn to_hex_string(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{:02x}", byte)).collect()
 }

@@ -164,7 +164,7 @@ impl RocksStore {
 }
 
 impl super::Store for RocksStore {
-    fn add_message(&mut self, message: Message, topic: &[u8], data: &[Vec<u8>]) -> Result<usize> {
+    fn add_message(&mut self, message: &Message, topic: &[u8], data: &[Vec<u8>]) -> Result<usize> {
         let mut frame_opt = None;
         let source_id = if message.is_video_frame() {
             let frame = message.as_video_frame().unwrap();
@@ -380,7 +380,7 @@ mod tests {
         {
             let mut db = RocksStore::new(path, Duration::from_secs(60))?;
             let m = frame.to_message();
-            let id = db.add_message(m.clone(), &[], &[])?;
+            let id = db.add_message(&m, &[], &[])?;
             let (m2, _, _) = db.get_message(&source_id, id)?.unwrap();
             assert_eq!(
                 m.as_video_frame().unwrap().get_uuid_u128(),
@@ -420,19 +420,19 @@ mod tests {
         let mut db = RocksStore::new(path, Duration::from_secs(60)).unwrap();
         let f = gen_properly_filled_frame();
         let source_id = f.get_source_id();
-        db.add_message(f.to_message(), &[], &[]).unwrap();
+        db.add_message(&f.to_message(), &[], &[]).unwrap();
         std::thread::sleep(Duration::from_millis(10));
         let f = gen_properly_filled_frame();
-        db.add_message(f.to_message(), &[], &[]).unwrap();
+        db.add_message(&f.to_message(), &[], &[]).unwrap();
         std::thread::sleep(Duration::from_millis(10));
         let mut other_source_frame = gen_properly_filled_frame();
         other_source_frame.set_source_id("other_source_id");
-        db.add_message(other_source_frame.to_message(), &[], &[])
+        db.add_message(&other_source_frame.to_message(), &[], &[])
             .unwrap();
         std::thread::sleep(Duration::from_millis(10));
         let f = gen_properly_filled_frame();
         let uuid_f3 = f.get_uuid();
-        db.add_message(f.to_message(), &[], &[]).unwrap();
+        db.add_message(&f.to_message(), &[], &[]).unwrap();
 
         let first = db
             .get_first(&source_id, uuid_f3, BeforeOffset::Blocks(1))
@@ -450,14 +450,14 @@ mod tests {
         let mut db = RocksStore::new(path, Duration::from_secs(60)).unwrap();
         let f = gen_properly_filled_frame();
         let source_id = f.get_source_id();
-        db.add_message(f.to_message(), &[], &[]).unwrap();
+        db.add_message(&f.to_message(), &[], &[]).unwrap();
         std::thread::sleep(Duration::from_millis(10));
         let f = gen_properly_filled_frame();
-        db.add_message(f.to_message(), &[], &[]).unwrap();
+        db.add_message(&f.to_message(), &[], &[]).unwrap();
         std::thread::sleep(Duration::from_millis(10));
         let f = gen_properly_filled_frame();
         let uuid_f3 = f.get_uuid();
-        db.add_message(f.to_message(), &[], &[]).unwrap();
+        db.add_message(&f.to_message(), &[], &[]).unwrap();
 
         let first = db
             .get_first(&source_id, uuid_f3, BeforeOffset::Seconds(0.005))
