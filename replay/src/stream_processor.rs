@@ -164,7 +164,6 @@ mod tests {
                 panic!("Too short");
             }
         }
-
         Ok(())
     }
 }
