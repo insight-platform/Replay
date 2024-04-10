@@ -1,4 +1,4 @@
-use crate::store::BeforeOffset;
+use crate::store::Offset;
 use anyhow::{bail, Result};
 use bincode::config::{BigEndian, Configuration};
 use bincode::{Decode, Encode};
@@ -272,7 +272,7 @@ impl super::Store for RocksStore {
         &mut self,
         source_id: &str,
         keyframe_uuid: Uuid,
-        before: BeforeOffset,
+        before: Offset,
     ) -> Result<Option<usize>> {
         let source_hash = self.get_source_hash(source_id)?;
         let key = KeyframeKey {
@@ -318,12 +318,12 @@ impl super::Store for RocksStore {
                 let current_pts = value.pts;
 
                 match before {
-                    BeforeOffset::Blocks(blocks_before) => {
+                    Offset::Blocks(blocks_before) => {
                         if req_index - current_index >= blocks_before {
                             break;
                         }
                     }
-                    BeforeOffset::Seconds(seconds_before) => {
+                    Offset::Seconds(seconds_before) => {
                         if req_pts - current_pts >= seconds_before {
                             break;
                         }
@@ -418,7 +418,7 @@ mod tests {
         db.add_message(&f.to_message(), &[], &[]).unwrap();
 
         let first = db
-            .get_first(&source_id, uuid_f3, BeforeOffset::Blocks(1))
+            .get_first(&source_id, uuid_f3, Offset::Blocks(1))
             .unwrap()
             .unwrap();
         assert_eq!(first, 1);
@@ -443,13 +443,13 @@ mod tests {
         db.add_message(&f.to_message(), &[], &[]).unwrap();
 
         let first = db
-            .get_first(&source_id, uuid_f3, BeforeOffset::Seconds(0.005))
+            .get_first(&source_id, uuid_f3, Offset::Seconds(0.005))
             .unwrap()
             .unwrap();
         assert_eq!(first, 1);
 
         let first = db
-            .get_first(&source_id, uuid_f3, BeforeOffset::Seconds(0.015))
+            .get_first(&source_id, uuid_f3, Offset::Seconds(0.015))
             .unwrap()
             .unwrap();
         assert_eq!(first, 0);

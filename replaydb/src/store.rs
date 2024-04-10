@@ -7,7 +7,7 @@ use savant_core::test::gen_frame;
 use std::time::SystemTime;
 use uuid::Uuid;
 
-pub enum BeforeOffset {
+pub enum Offset {
     Blocks(usize),
     Seconds(f64),
 }
@@ -25,7 +25,7 @@ pub trait Store {
         &mut self,
         source_id: &str,
         keyframe_uuid: Uuid,
-        before: BeforeOffset,
+        before: Offset,
     ) -> Result<Option<usize>>;
 }
 
@@ -69,7 +69,7 @@ mod tests {
             &mut self,
             _: &str,
             keyframe_uuid: Uuid,
-            before: BeforeOffset,
+            before: Offset,
         ) -> Result<Option<usize>> {
             let idx = self.keyframes.iter().position(|(u, _)| u == &keyframe_uuid);
             if idx.is_none() {
@@ -78,14 +78,14 @@ mod tests {
             let idx = idx.unwrap();
 
             Ok(Some(match before {
-                BeforeOffset::Blocks(blocks_before) => {
+                Offset::Blocks(blocks_before) => {
                     if idx < blocks_before {
                         self.keyframes[0].1
                     } else {
                         self.keyframes[idx - blocks_before].1
                     }
                 }
-                BeforeOffset::Seconds(seconds_before) => {
+                Offset::Seconds(seconds_before) => {
                     let frame = self.messages[self.keyframes[idx].1]
                         .as_video_frame()
                         .unwrap();
@@ -170,7 +170,7 @@ mod tests {
         f.set_pts(6);
         store.add_message(&f.to_message(), &[], &[])?;
 
-        let first = store.get_first("", u, BeforeOffset::Blocks(1))?;
+        let first = store.get_first("", u, Offset::Blocks(1))?;
         assert_eq!(first, Some(4));
         let (m, _, _) = store.get_message("", first.unwrap())?.unwrap();
         assert!(matches!(
@@ -178,7 +178,7 @@ mod tests {
             Some(true)
         ));
 
-        let first_ts = store.get_first("", u, BeforeOffset::Seconds(5.0))?;
+        let first_ts = store.get_first("", u, Offset::Seconds(5.0))?;
         assert_eq!(first_ts, Some(0));
         let (m, _, _) = store.get_message("", first_ts.unwrap())?.unwrap();
 

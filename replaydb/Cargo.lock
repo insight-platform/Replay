@@ -1787,6 +1787,8 @@ dependencies = [
  "parking_lot",
  "rocksdb",
  "savant_core",
+ "serde",
+ "serde_json",
  "tempfile",
  "uuid",
 ]
