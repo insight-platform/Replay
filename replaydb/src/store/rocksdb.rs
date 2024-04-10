@@ -99,12 +99,11 @@ impl RocksStore {
             source_md5: self.get_source_hash(source_id)?,
         };
 
-        let key_bytes = bincode::encode_to_vec(&key, self.configuration.clone())?;
+        let key_bytes = bincode::encode_to_vec(key, self.configuration)?;
         let cf = self.db.cf_handle(CF_INDEX_DB).unwrap();
-        let value_bytes = self.db.get_cf(cf, &key_bytes)?;
+        let value_bytes = self.db.get_cf(cf, key_bytes)?;
         let value = if let Some(value_bytes) = value_bytes {
-            let value: IndexValue =
-                bincode::decode_from_slice(&value_bytes, self.configuration.clone())?.0;
+            let value: IndexValue = bincode::decode_from_slice(&value_bytes, self.configuration)?.0;
             value.index
         } else {
             0
@@ -141,7 +140,7 @@ impl RocksStore {
 
         let db = DB::open_cf_descriptors_with_ttl(
             &db_opts,
-            &path,
+            path,
             vec![cf_message, cf_keyframe, cf_index],
             ttl,
         )?;
@@ -192,14 +191,13 @@ impl super::Store for RocksStore {
         };
 
         let message_value = MessageValue {
-            message: save_message(&message)?,
+            message: save_message(message)?,
             topic: topic.to_vec(),
             data: data.to_vec(),
         };
 
-        let message_key_bytes = bincode::encode_to_vec(&message_key, self.configuration.clone())?;
-        let message_value_bytes =
-            bincode::encode_to_vec(&message_value, self.configuration.clone())?;
+        let message_key_bytes = bincode::encode_to_vec(message_key, self.configuration)?;
+        let message_value_bytes = bincode::encode_to_vec(message_value, self.configuration)?;
         let cf = self
             .db
             .cf_handle(CF_MESSAGE_DB)
@@ -211,11 +209,11 @@ impl super::Store for RocksStore {
                 source_md5: source_hash,
                 keyframe_uuid: f.get_uuid_u128(),
             };
-            let key_bytes = bincode::encode_to_vec(&key, self.configuration.clone())?;
+            let key_bytes = bincode::encode_to_vec(key, self.configuration)?;
             let (time_base_nom, time_base_denom) = f.get_time_base();
             let pts = f.get_pts() as f64 * time_base_nom as f64 / time_base_denom as f64;
             let value = KeyframeValue { index, pts };
-            let value_bytes = bincode::encode_to_vec(&value, self.configuration.clone())?;
+            let value_bytes = bincode::encode_to_vec(value, self.configuration)?;
             let cf = self
                 .db
                 .cf_handle(CF_KEYFRAME_DB)
@@ -229,8 +227,8 @@ impl super::Store for RocksStore {
 
         let index_value = IndexValue { index: index + 1 };
 
-        let index_key_bytes = bincode::encode_to_vec(&index_key, self.configuration.clone())?;
-        let index_value_bytes = bincode::encode_to_vec(&index_value, self.configuration.clone())?;
+        let index_key_bytes = bincode::encode_to_vec(index_key, self.configuration)?;
+        let index_value_bytes = bincode::encode_to_vec(index_value, self.configuration)?;
         let cf = self
             .db
             .cf_handle(CF_INDEX_DB)
@@ -252,15 +250,15 @@ impl super::Store for RocksStore {
             source_md5: source_hash,
             index: id,
         };
-        let key_bytes = bincode::encode_to_vec(&key, self.configuration.clone())?;
+        let key_bytes = bincode::encode_to_vec(key, self.configuration)?;
         let cf = self
             .db
             .cf_handle(CF_MESSAGE_DB)
             .expect("CF_MESSAGE_DB not found");
-        let value_bytes = self.db.get_cf(cf, &key_bytes)?;
+        let value_bytes = self.db.get_cf(cf, key_bytes)?;
         if let Some(value_bytes) = value_bytes {
             let message_value: MessageValue =
-                bincode::decode_from_slice(&value_bytes, self.configuration.clone())?.0;
+                bincode::decode_from_slice(&value_bytes, self.configuration)?.0;
             let message = load_message(&message_value.message);
             Ok(Some((message, message_value.topic, message_value.data)))
         } else {
@@ -279,16 +277,16 @@ impl super::Store for RocksStore {
             source_md5: source_hash,
             keyframe_uuid: keyframe_uuid.as_u128(),
         };
-        let key_bytes = bincode::encode_to_vec(&key, self.configuration.clone())?;
+        let key_bytes = bincode::encode_to_vec(&key, self.configuration)?;
         let cf = self
             .db
             .cf_handle(CF_KEYFRAME_DB)
             .expect("CF_KEYFRAME_DB not found");
-        let value_bytes = self.db.get_cf(cf, &key_bytes)?;
+        let value_bytes = self.db.get_cf(cf, key_bytes)?;
 
         if let Some(value_bytes) = value_bytes {
             let value: KeyframeValue =
-                bincode::decode_from_slice(&value_bytes, self.configuration.clone())?.0;
+                bincode::decode_from_slice(&value_bytes, self.configuration)?.0;
 
             let req_index = value.index;
             let req_pts = value.pts;
@@ -298,21 +296,20 @@ impl super::Store for RocksStore {
                 .cf_handle(CF_KEYFRAME_DB)
                 .expect("CF_KEYFRAME_DB not found");
 
-            let key_bytes = bincode::encode_to_vec(&key, self.configuration.clone())?;
+            let key_bytes = bincode::encode_to_vec(&key, self.configuration)?;
 
             let mut opts = ReadOptions::default();
             opts.set_prefix_same_as_start(true);
-            let mut iter = self.db.iterator_cf_opt(
+            let iter = self.db.iterator_cf_opt(
                 cf,
                 opts,
                 rocksdb::IteratorMode::From(&key_bytes, Direction::Reverse),
             );
 
             let mut current_index = req_index;
-            while let Some(res) = iter.next() {
+            for res in iter {
                 let (_, v) = res?;
-                let value: KeyframeValue =
-                    bincode::decode_from_slice(&v, self.configuration.clone())?.0;
+                let value: KeyframeValue = bincode::decode_from_slice(&v, self.configuration)?.0;
 
                 current_index = value.index;
                 let current_pts = value.pts;

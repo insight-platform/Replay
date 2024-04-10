@@ -4,6 +4,7 @@ use anyhow::Result;
 use savant_core::message::Message;
 use savant_core::primitives::frame::VideoFrameProxy;
 use savant_core::test::gen_frame;
+use std::fmt::Write;
 use std::time::SystemTime;
 use uuid::Uuid;
 
@@ -15,6 +16,7 @@ pub enum Offset {
 pub trait Store {
     fn add_message(&mut self, message: &Message, topic: &[u8], data: &[Vec<u8>]) -> Result<usize>;
 
+    #[allow(clippy::type_complexity)]
     fn get_message(
         &mut self,
         source_id: &str,
@@ -192,12 +194,15 @@ mod tests {
 }
 
 pub fn to_hex_string(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{:02x}", byte)).collect()
+    bytes.iter().fold(String::new(), |mut output, b| {
+        let _ = write!(output, "{b:02X}");
+        output
+    })
 }
 
 pub fn gen_properly_filled_frame() -> VideoFrameProxy {
     let mut f = gen_frame();
-    let (tbn, tbd) = (1, 1000_000);
+    let (tbn, tbd) = (1, 1_000_000);
     let now = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()

@@ -1,5 +1,6 @@
 use crate::store::Store;
 use parking_lot::Mutex;
+use savant_core::transport::zeromq::{NoopResponder, Writer, ZmqSocketProvider};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::{Debug, Formatter};
@@ -19,6 +20,8 @@ pub enum JobStopCondition {
 pub struct Job {
     #[serde(skip)]
     store: Arc<Mutex<dyn Store>>,
+    #[serde(skip)]
+    writer: Writer<NoopResponder, ZmqSocketProvider>,
     id: u128,
     pts_sync: bool,
     source_id: String,
@@ -43,8 +46,10 @@ impl Debug for Job {
 }
 
 impl Job {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         store: Arc<Mutex<dyn Store>>,
+        writer: Writer<NoopResponder, ZmqSocketProvider>,
         id: u128,
         position: usize,
         pts_sync: bool,
@@ -55,6 +60,7 @@ impl Job {
     ) -> Self {
         Self {
             store,
+            writer,
             id,
             pts_sync,
             source_id,

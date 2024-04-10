@@ -34,7 +34,7 @@ impl StreamProcessor {
                     log::debug!(
                         "Received message: topic: {:?}, routing_id: {:?}, message: {:?}",
                         to_hex_string(&topic),
-                        to_hex_string(&routing_id.as_ref().unwrap_or(&Vec::new())),
+                        to_hex_string(routing_id.as_ref().unwrap_or(&Vec::new())),
                         message
                     );
                     if message.is_video_frame()
@@ -57,14 +57,14 @@ impl StreamProcessor {
                     log::warn!(
                         "Received message with mismatched prefix: topic: {:?}, routing_id: {:?}",
                         to_hex_string(&topic),
-                        to_hex_string(&routing_id.as_ref().unwrap_or(&Vec::new()))
+                        to_hex_string(routing_id.as_ref().unwrap_or(&Vec::new()))
                     );
                 }
                 ReaderResult::RoutingIdMismatch { topic, routing_id } => {
                     log::warn!(
                             "Received message with mismatched routing_id: topic: {:?}, routing_id: {:?}",
                             to_hex_string(&topic),
-                            to_hex_string(&routing_id.as_ref().unwrap_or(&Vec::new()))
+                            to_hex_string(routing_id.as_ref().unwrap_or(&Vec::new()))
                         );
                 }
                 ReaderResult::TooShort(m) => {
