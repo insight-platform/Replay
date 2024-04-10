@@ -195,7 +195,6 @@ pub fn to_hex_string(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{:02x}", byte)).collect()
 }
 
-#[cfg(test)]
 pub fn gen_properly_filled_frame() -> VideoFrameProxy {
     let mut f = gen_frame();
     let (tbn, tbd) = (1, 1000_000);

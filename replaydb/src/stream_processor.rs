@@ -21,7 +21,7 @@ impl StreamProcessor {
         Self { db, input, output }
     }
 
-    pub(crate) fn run_once(&mut self) -> Result<()> {
+    pub fn run_once(&mut self) -> Result<()> {
         let message = self.input.receive();
         match message {
             Ok(m) => match m {
@@ -131,7 +131,6 @@ mod tests {
         let mut processor =
             crate::stream_processor::StreamProcessor::new(db.clone(), in_reader, out_writer);
 
-        std::fs::remove_dir_all(path).unwrap_or_default();
         let f = gen_properly_filled_frame();
         let uuid = f.get_uuid_u128();
         let m1 = f.to_message();
@@ -164,6 +163,7 @@ mod tests {
                 panic!("Too short");
             }
         }
+        std::fs::remove_dir_all(path).unwrap_or_default();
         Ok(())
     }
 }
