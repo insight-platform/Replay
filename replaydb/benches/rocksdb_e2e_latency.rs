@@ -6,9 +6,8 @@ use parking_lot::Mutex;
 use replaydb::store::gen_properly_filled_frame;
 use replaydb::store::rocksdb::RocksStore;
 use replaydb::stream_processor::StreamProcessor;
-use savant_core::transport::zeromq::{
-    NoopResponder, Reader, ReaderConfig, Writer, WriterConfig, ZmqSocketProvider,
-};
+use replaydb::{ZmqReader, ZmqWriter};
+use savant_core::transport::zeromq::{ReaderConfig, WriterConfig};
 use std::sync::Arc;
 use std::time::Duration;
 use test::Bencher;
@@ -36,19 +35,19 @@ fn bench_bandwidth(b: &mut Bencher, data: Vec<u8>) -> anyhow::Result<()> {
     let path = dir.path().to_str().unwrap();
     let db = RocksStore::new(path, Duration::from_secs(60)).unwrap();
 
-    let in_reader = Reader::<NoopResponder, ZmqSocketProvider>::new(
+    let in_reader = ZmqReader::new(
         &ReaderConfig::new()
             .url(&format!("router+bind:ipc://{}/in", path))?
             .with_fix_ipc_permissions(Some(0o777))?
             .build()?,
     )?;
 
-    let mut in_writer = Writer::<NoopResponder, ZmqSocketProvider>::new(
+    let mut in_writer = ZmqWriter::new(
         &WriterConfig::new()
             .url(&format!("dealer+connect:ipc://{}/in", path))?
             .build()?,
     )?;
-    let out_writer = Writer::<NoopResponder, ZmqSocketProvider>::new(
+    let out_writer = ZmqWriter::new(
         &WriterConfig::new()
             .url(&format!("pub+bind:ipc://{}/out", path))?
             .build()?,

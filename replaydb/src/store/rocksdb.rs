@@ -64,7 +64,7 @@ struct KeyframeKey {
 #[derive(Encode, Decode, PartialEq, Debug)]
 struct KeyframeValue {
     pub(crate) index: usize,
-    pub(crate) pts: f64,
+    pub(crate) ts: u128,
 }
 
 pub struct RocksStore {
@@ -210,9 +210,8 @@ impl super::Store for RocksStore {
                 keyframe_uuid: f.get_uuid_u128(),
             };
             let key_bytes = bincode::encode_to_vec(key, self.configuration)?;
-            let (time_base_nom, time_base_denom) = f.get_time_base();
-            let pts = f.get_pts() as f64 * time_base_nom as f64 / time_base_denom as f64;
-            let value = KeyframeValue { index, pts };
+            let ts = f.get_creation_timestamp_ns();
+            let value = KeyframeValue { index, ts };
             let value_bytes = bincode::encode_to_vec(value, self.configuration)?;
             let cf = self
                 .db
@@ -289,7 +288,8 @@ impl super::Store for RocksStore {
                 bincode::decode_from_slice(&value_bytes, self.configuration)?.0;
 
             let req_index = value.index;
-            let req_pts = value.pts;
+            let req_pts = value.ts;
+            dbg!(req_pts);
 
             let cf = self
                 .db
@@ -312,7 +312,8 @@ impl super::Store for RocksStore {
                 let value: KeyframeValue = bincode::decode_from_slice(&v, self.configuration)?.0;
 
                 current_index = value.index;
-                let current_pts = value.pts;
+                let current_pts = value.ts;
+                dbg!(current_pts);
 
                 match before {
                     Offset::Blocks(blocks_before) => {
@@ -321,7 +322,9 @@ impl super::Store for RocksStore {
                         }
                     }
                     Offset::Seconds(seconds_before) => {
-                        if req_pts - current_pts >= seconds_before {
+                        if req_pts - current_pts
+                            >= Duration::from_secs_f64(seconds_before).as_nanos()
+                        {
                             break;
                         }
                     }

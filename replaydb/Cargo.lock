@@ -1877,8 +1877,8 @@ dependencies = [
 
 [[package]]
 name = "savant_core"
-version = "0.2.19"
-source = "git+https://github.com/insight-platform/savant-rs?tag=0.2.19#97997d507f845e61d410ed20ae269d63b3da674f"
+version = "0.2.20"
+source = "git+https://github.com/insight-platform/savant-rs?tag=0.2.20#964844744976be909b75986ed81a4176ac14ba20"
 dependencies = [
  "anyhow",
  "bytes",

@@ -203,13 +203,14 @@ pub fn to_hex_string(bytes: &[u8]) -> String {
 pub fn gen_properly_filled_frame() -> VideoFrameProxy {
     let mut f = gen_frame();
     let (tbn, tbd) = (1, 1_000_000);
-    let now = SystemTime::now()
+    let now_nanos = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
-        .as_micros() as f64
-        / 1_000_000.0;
+        .as_nanos();
+    let now = now_nanos as f64 / 1e9f64;
     let pts = (now * tbd as f64 / tbn as f64) as i64;
     f.set_pts(pts);
+    f.set_creation_timestamp_ns(now_nanos);
     f.set_time_base((tbn, tbd));
     f.set_keyframe(Some(true));
     f

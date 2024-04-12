@@ -1,23 +1,18 @@
 use crate::store::{to_hex_string, Store};
+use crate::{ZmqReader, ZmqWriter};
 use anyhow::{bail, Result};
 use parking_lot::Mutex;
-use savant_core::transport::zeromq::{
-    NoopResponder, Reader, ReaderResult, Writer, ZmqSocketProvider,
-};
+use savant_core::transport::zeromq::ReaderResult;
 use std::sync::Arc;
 
 pub struct StreamProcessor {
     db: Arc<Mutex<dyn Store>>,
-    input: Reader<NoopResponder, ZmqSocketProvider>,
-    output: Writer<NoopResponder, ZmqSocketProvider>,
+    input: ZmqReader,
+    output: ZmqWriter,
 }
 
 impl StreamProcessor {
-    pub fn new(
-        db: Arc<Mutex<dyn Store>>,
-        input: Reader<NoopResponder, ZmqSocketProvider>,
-        output: Writer<NoopResponder, ZmqSocketProvider>,
-    ) -> Self {
+    pub fn new(db: Arc<Mutex<dyn Store>>, input: ZmqReader, output: ZmqWriter) -> Self {
         Self { db, input, output }
     }
 
@@ -88,11 +83,10 @@ impl StreamProcessor {
 #[cfg(test)]
 mod tests {
     use crate::store::{gen_properly_filled_frame, Store};
+    use crate::{ZmqReader, ZmqWriter};
     use anyhow::Result;
     use parking_lot::Mutex;
-    use savant_core::transport::zeromq::{
-        NoopResponder, Reader, ReaderConfig, ReaderResult, Writer, WriterConfig, ZmqSocketProvider,
-    };
+    use savant_core::transport::zeromq::{ReaderConfig, ReaderResult, WriterConfig};
     use std::sync::Arc;
     use std::time::Duration;
 
@@ -102,27 +96,27 @@ mod tests {
         let path = dir.path().to_str().unwrap();
         let db = crate::store::rocksdb::RocksStore::new(path, Duration::from_secs(60)).unwrap();
 
-        let in_reader = Reader::<NoopResponder, ZmqSocketProvider>::new(
+        let in_reader = ZmqReader::new(
             &ReaderConfig::new()
                 .url(&format!("router+bind:ipc://{}/in", path))?
                 .with_fix_ipc_permissions(Some(0o777))?
                 .build()?,
         )?;
 
-        let mut in_writer = Writer::<NoopResponder, ZmqSocketProvider>::new(
+        let mut in_writer = ZmqWriter::new(
             &WriterConfig::new()
                 .url(&format!("dealer+connect:ipc://{}/in", path))?
                 .build()?,
         )?;
 
-        let mut out_reader = Reader::<NoopResponder, ZmqSocketProvider>::new(
+        let mut out_reader = ZmqReader::new(
             &ReaderConfig::new()
                 .url(&format!("router+bind:ipc://{}/out", path))?
                 .with_fix_ipc_permissions(Some(0o777))?
                 .build()?,
         )?;
 
-        let out_writer = Writer::<NoopResponder, ZmqSocketProvider>::new(
+        let out_writer = ZmqWriter::new(
             &WriterConfig::new()
                 .url(&format!("dealer+connect:ipc://{}/out", path))?
                 .build()?,
