@@ -32,6 +32,8 @@ pub struct Job {
     store: Arc<Mutex<dyn Store>>,
     #[serde(skip)]
     writer: Arc<Mutex<ZmqWriter>>,
+    #[serde(skip)]
+    cached_message: Option<(Message, Vec<Vec<u8>>)>,
     id: u128,
     pts_sync: bool,
     db_source_id: String,
@@ -102,6 +104,7 @@ impl Job {
             last_invocation: 0,
             last_elapsed: Duration::from_secs(0),
             next_step: now,
+            cached_message: None,
         }
     }
 
@@ -146,7 +149,6 @@ impl Job {
     ) -> Result<Option<Duration>> {
         let ts = Instant::now();
         let sliced_data = data.iter().map(|d| d.as_slice()).collect::<Vec<_>>();
-        dbg!(&sliced_data);
 
         let result =
             self.writer
@@ -204,20 +206,25 @@ impl Job {
             .as_nanos();
 
         if self.next_step > now {
-            return Ok(self.next_step - now);
+            return Ok(self.next_step.saturating_sub(now));
         }
 
-        // ready
-        let res = self
-            .store
-            .lock()
-            .get_message(&self.db_source_id, self.position)?;
+        let cached = self.cached_message.take();
+        let res = if let Some((m, d)) = cached {
+            Some((m, d))
+        } else {
+            self.store
+                .lock()
+                .get_message(&self.db_source_id, self.position)?
+                .map(|(m, _, d)| (m, d))
+        };
 
-        if let Some((message, _, data)) = res {
+        if let Some((message, data)) = res {
             self.accumulated_idle_timeout = Duration::from_secs(0);
             let message_pts = self.get_current_message_pts(&message);
             self.next_step = self.calculate_next_step(message_pts, Some(self.last_elapsed));
             if self.next_step > now {
+                self.cached_message = Some((message, data));
                 return Ok(self.next_step - now);
             }
             let prepared_message = self.prepare_message(message);
@@ -234,7 +241,7 @@ impl Job {
             self.accumulated_idle_timeout +=
                 Duration::from_nanos((now - self.last_invocation) as u64);
         }
-        Ok(self.next_step - now)
+        Ok(self.next_step.saturating_sub(now))
     }
     fn calculate_next_step(
         &mut self,
@@ -269,13 +276,13 @@ mod tests {
     use uuid::Uuid;
 
     struct MockStore {
-        pub payload: Option<(Message, Vec<u8>, Vec<Vec<u8>>)>,
+        pub payload: Vec<Option<(Message, Vec<u8>, Vec<Vec<u8>>)>>,
     }
 
     impl Store for MockStore {
         fn add_message(
             &mut self,
-            message: &Message,
+            _message: &Message,
             _topic: &[u8],
             _data: &[Vec<u8>],
         ) -> Result<usize> {
@@ -285,16 +292,17 @@ mod tests {
         fn get_message(
             &mut self,
             _: &str,
-            id: usize,
+            _id: usize,
         ) -> Result<Option<(Message, Vec<u8>, Vec<Vec<u8>>)>> {
-            Ok(self.payload.take())
+            let m = self.payload.remove(0);
+            Ok(m)
         }
 
         fn get_first(
             &mut self,
             _: &str,
-            keyframe_uuid: Uuid,
-            before: Offset,
+            _keyframe_uuid: Uuid,
+            _before: Offset,
         ) -> Result<Option<usize>> {
             todo!("")
         }
@@ -304,7 +312,6 @@ mod tests {
     fn test_unsynchronized_advancing() -> Result<()> {
         let dir = tempfile::TempDir::new()?;
         let path = dir.path().to_str().unwrap();
-        let db = crate::store::rocksdb::RocksStore::new(path, Duration::from_secs(60)).unwrap();
 
         let mut in_reader = ZmqReader::new(
             &ReaderConfig::new()
@@ -320,11 +327,23 @@ mod tests {
         )?;
 
         let store = Arc::new(Mutex::new(MockStore {
-            payload: Some((
-                Message::end_of_stream(EndOfStream::new(String::from("source"))),
-                vec![],
-                vec![],
-            )),
+            payload: vec![
+                Some((
+                    Message::end_of_stream(EndOfStream::new(String::from("source"))),
+                    vec![],
+                    vec![],
+                )),
+                Some((
+                    gen_properly_filled_frame().to_message(),
+                    vec![],
+                    vec![vec![0x0]],
+                )),
+                Some((
+                    gen_properly_filled_frame().to_message(),
+                    vec![],
+                    vec![vec![0x1]],
+                )),
+            ],
         }));
 
         let mut job = Job::new(
@@ -347,7 +366,7 @@ mod tests {
         if let ReaderResult::Message {
             message,
             topic,
-            routing_id,
+            routing_id: _,
             data,
         } = m
         {
@@ -358,19 +377,13 @@ mod tests {
             panic!("Unexpected message type");
         }
 
-        store.lock().payload = Some((
-            gen_properly_filled_frame().to_message(),
-            vec![],
-            vec![vec![0x0]],
-        ));
-
         let res = job.advance();
         assert!(matches!(res, Ok(0)));
         let m = in_reader.receive().unwrap();
         if let ReaderResult::Message {
             message,
             topic,
-            routing_id,
+            routing_id: _,
             data,
         } = m
         {
@@ -381,6 +394,28 @@ mod tests {
             panic!("Unexpected message type");
         }
 
+        let res = job.advance();
+        assert!(matches!(res, Ok(0)));
+        let m = in_reader.receive().unwrap();
+        if let ReaderResult::Message {
+            message,
+            topic,
+            routing_id: _,
+            data,
+        } = m
+        {
+            assert!(message.is_video_frame());
+            assert_eq!(topic, b"result");
+            assert_eq!(data, vec![vec![0x1]]);
+        } else {
+            panic!("Unexpected message type");
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_synchronous_advancing() -> Result<()> {
         Ok(())
     }
 }
