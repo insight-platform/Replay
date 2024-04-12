@@ -26,6 +26,11 @@ pub enum RoutingLabelsUpdateStrategy {
     Append(Vec<String>),
 }
 
+pub enum JobAdvanceResult {
+    NextStepTimer(u128),
+    Idle,
+}
+
 #[derive(Serialize)]
 pub struct Job {
     #[serde(skip)]
@@ -34,6 +39,8 @@ pub struct Job {
     writer: Arc<Mutex<ZmqWriter>>,
     #[serde(skip)]
     cached_message: Option<(Message, Vec<Vec<u8>>)>,
+    #[serde(skip)]
+    last_sent_message: Option<Message>,
     id: u128,
     pts_sync: bool,
     db_source_id: String,
@@ -41,8 +48,6 @@ pub struct Job {
     routing_labels: RoutingLabelsUpdateStrategy,
     send_eos: bool,
     stop_condition: JobStopCondition,
-    idle_timeout: Duration,
-    accumulated_idle_timeout: Duration,
     position: usize,
     last_pts: Option<u128>,
     last_elapsed: Duration,
@@ -60,8 +65,6 @@ impl Debug for Job {
             .field("routing_labels", &self.routing_labels)
             .field("send_eos", &self.send_eos)
             .field("stop_condition", &self.stop_condition)
-            .field("idle_timeout", &self.idle_timeout)
-            .field("accumulated_idle_timeout", &self.accumulated_idle_timeout)
             .field("position", &self.position)
             .field("next_step", &self.next_step)
             .finish()
@@ -81,7 +84,6 @@ impl Job {
         routing_labels: RoutingLabelsUpdateStrategy,
         send_eos: bool,
         stop_condition: JobStopCondition,
-        idle_timeout: Duration,
     ) -> Self {
         let now = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -98,13 +100,12 @@ impl Job {
             send_eos,
             position,
             stop_condition,
-            idle_timeout,
             last_pts: None,
-            accumulated_idle_timeout: Duration::from_secs(0),
             last_invocation: 0,
             last_elapsed: Duration::from_secs(0),
             next_step: now,
             cached_message: None,
+            last_sent_message: None,
         }
     }
 
@@ -144,7 +145,7 @@ impl Job {
 
     pub fn send_message(
         &mut self,
-        message: Message,
+        message: &Message,
         data: Vec<Vec<u8>>,
     ) -> Result<Option<Duration>> {
         let ts = Instant::now();
@@ -153,7 +154,7 @@ impl Job {
         let result =
             self.writer
                 .lock()
-                .send_message(&self.resulting_source_id, &message, &sliced_data)?;
+                .send_message(&self.resulting_source_id, message, &sliced_data)?;
 
         match result {
             WriterResult::SendTimeout => {
@@ -199,14 +200,16 @@ impl Job {
         }
     }
 
-    pub fn advance(&mut self) -> Result<u128> {
+    pub fn advance(&mut self) -> Result<JobAdvanceResult> {
         let now = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
 
         if self.next_step > now {
-            return Ok(self.next_step.saturating_sub(now));
+            return Ok(JobAdvanceResult::NextStepTimer(
+                self.next_step.saturating_sub(now),
+            ));
         }
 
         let cached = self.cached_message.take();
@@ -220,28 +223,29 @@ impl Job {
         };
 
         if let Some((message, data)) = res {
-            self.accumulated_idle_timeout = Duration::from_secs(0);
             let message_pts = self.get_current_message_pts(&message);
             self.next_step = self.calculate_next_step(message_pts, Some(self.last_elapsed));
             if self.next_step > now {
                 self.cached_message = Some((message, data));
-                return Ok(self.next_step - now);
+                return Ok(JobAdvanceResult::NextStepTimer(self.next_step - now));
             }
             let prepared_message = self.prepare_message(message);
-            let elapsed = self.send_message(prepared_message, data)?;
+            let elapsed = self.send_message(&prepared_message, data)?;
             if elapsed.is_none() {
-                return Ok(0);
+                return Ok(JobAdvanceResult::NextStepTimer(0));
             }
+            self.last_sent_message = Some(prepared_message);
             self.last_elapsed = elapsed.unwrap();
             if let Some(mp) = message_pts {
                 self.last_pts = Some(mp);
             }
             self.last_invocation = now;
+            Ok(JobAdvanceResult::NextStepTimer(
+                self.next_step.saturating_sub(now),
+            ))
         } else {
-            self.accumulated_idle_timeout +=
-                Duration::from_nanos((now - self.last_invocation) as u64);
+            Ok(JobAdvanceResult::Idle)
         }
-        Ok(self.next_step.saturating_sub(now))
     }
     fn calculate_next_step(
         &mut self,
@@ -310,22 +314,16 @@ mod tests {
 
     #[test]
     fn test_unsynchronized_advancing() -> Result<()> {
-        let dir = tempfile::TempDir::new()?;
-        let path = dir.path().to_str().unwrap();
-
-        let mut in_reader = ZmqReader::new(
-            &ReaderConfig::new()
-                .url(&format!("router+bind:ipc://{}/in", path))?
-                .with_fix_ipc_permissions(Some(0o777))?
-                .build()?,
-        )?;
-
         let in_writer = ZmqWriter::new(
             &WriterConfig::new()
-                .url(&format!("dealer+connect:ipc://{}/in", path))?
+                .url("dealer+bind:tcp://127.0.0.1:11111")?
                 .build()?,
         )?;
-
+        let mut in_reader = ZmqReader::new(
+            &ReaderConfig::new()
+                .url("router+connect:tcp://127.0.0.1:11111")?
+                .build()?,
+        )?;
         let store = Arc::new(Mutex::new(MockStore {
             payload: vec![
                 Some((
@@ -357,11 +355,10 @@ mod tests {
             RoutingLabelsUpdateStrategy::Keep,
             false,
             JobStopCondition::LastKeyFrame(0),
-            Duration::from_secs(0),
         );
 
         let res = job.advance();
-        assert!(matches!(res, Ok(0)));
+        assert!(matches!(res, Ok(JobAdvanceResult::NextStepTimer(0))));
         let m = in_reader.receive().unwrap();
         if let ReaderResult::Message {
             message,
@@ -378,7 +375,7 @@ mod tests {
         }
 
         let res = job.advance();
-        assert!(matches!(res, Ok(0)));
+        assert!(matches!(res, Ok(JobAdvanceResult::NextStepTimer(0))));
         let m = in_reader.receive().unwrap();
         if let ReaderResult::Message {
             message,
@@ -395,7 +392,7 @@ mod tests {
         }
 
         let res = job.advance();
-        assert!(matches!(res, Ok(0)));
+        assert!(matches!(res, Ok(JobAdvanceResult::NextStepTimer(0))));
         let m = in_reader.receive().unwrap();
         if let ReaderResult::Message {
             message,
