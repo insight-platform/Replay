@@ -1,14 +1,15 @@
+use crate::store::rocksdb::RocksStore;
 use crate::store::Store;
-use crate::ZmqWriter;
-use anyhow::Result;
+use anyhow::{bail, Result};
+use derive_builder::Builder;
 use parking_lot::Mutex;
 use savant_core::message::Message;
-use savant_core::transport::zeromq::WriterResult;
+use savant_core::transport::zeromq::{NonBlockingWriter, WriterResult};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum JobStopCondition {
@@ -19,119 +20,190 @@ pub enum JobStopCondition {
     RealTimeDelta(f64),
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Builder, Default)]
+pub struct JobConfiguration {
+    pts_sync: bool,
+    skip_intermediary_eos: bool,
+    send_eos: bool,
+    pts_discrepancy_fix_duration: Duration,
+    min_duration: Duration,
+    max_duration: Duration,
+    stored_source_id: String,
+    resulting_source_id: String,
+    routing_labels: RoutingLabelsUpdateStrategy,
+    max_idle_duration: Duration,
+    max_delivery_duration: Duration,
+}
+
+pub struct JobConditionStopState;
+
+impl JobConditionStopState {
+    pub fn check(
+        &mut self,
+        _position: usize,
+        _condition: &JobStopCondition,
+        _message: &Message,
+    ) -> bool {
+        false
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub enum RoutingLabelsUpdateStrategy {
-    Keep,
+    #[default]
+    Bypass,
     Replace(Vec<String>),
     Append(Vec<String>),
 }
 
-pub enum JobAdvanceResult {
-    NextStepTimer(u128),
-    Idle,
+pub enum SendEither<'a> {
+    Message(&'a Message, &'a [&'a [u8]]),
+    EOS,
+}
+
+pub struct RocksDbJob(Job<RocksStore>);
+
+impl RocksDbJob {
+    pub fn new(
+        store: Arc<Mutex<RocksStore>>,
+        writer: Arc<NonBlockingWriter>,
+        id: u128,
+        position: usize,
+        stop_condition: JobStopCondition,
+        configuration: JobConfiguration,
+    ) -> Result<Self> {
+        Ok(Self(Job::new(
+            store,
+            writer,
+            id,
+            position,
+            stop_condition,
+            configuration,
+        )?))
+    }
+
+    pub async fn run_until_complete(&mut self) -> Result<()> {
+        self.0.run_until_complete().await
+    }
 }
 
 #[derive(Serialize)]
-pub struct Job {
+pub(crate) struct Job<S: Store> {
     #[serde(skip)]
-    store: Arc<Mutex<dyn Store>>,
+    store: Arc<Mutex<S>>,
     #[serde(skip)]
-    writer: Arc<Mutex<ZmqWriter>>,
-    #[serde(skip)]
-    cached_message: Option<(Message, Vec<Vec<u8>>)>,
-    #[serde(skip)]
-    last_sent_message: Option<Message>,
+    writer: Arc<NonBlockingWriter>,
     id: u128,
-    pts_sync: bool,
-    db_source_id: String,
-    resulting_source_id: String,
-    routing_labels: RoutingLabelsUpdateStrategy,
-    send_eos: bool,
     stop_condition: JobStopCondition,
     position: usize,
-    last_pts: Option<u128>,
-    last_elapsed: Duration,
-    last_invocation: u128,
-    next_step: u128,
+    configuration: JobConfiguration,
 }
 
-impl Debug for Job {
+impl<S> Debug for Job<S>
+where
+    S: Store,
+{
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("Job")
             .field("id", &self.id)
-            .field("pts_sync", &self.pts_sync)
-            .field("source_id", &self.db_source_id)
-            .field("resulting_source_id", &self.resulting_source_id)
-            .field("routing_labels", &self.routing_labels)
-            .field("send_eos", &self.send_eos)
             .field("stop_condition", &self.stop_condition)
             .field("position", &self.position)
-            .field("next_step", &self.next_step)
+            .field("configuration", &self.configuration)
             .finish()
     }
 }
 
-impl Job {
-    #[allow(clippy::too_many_arguments)]
+impl<S> Job<S>
+where
+    S: Store,
+{
     pub fn new(
-        store: Arc<Mutex<dyn Store>>,
-        writer: Arc<Mutex<ZmqWriter>>,
+        store: Arc<Mutex<S>>,
+        writer: Arc<NonBlockingWriter>,
         id: u128,
         position: usize,
-        pts_sync: bool,
-        db_source_id: String,
-        resulting_source_id: String,
-        routing_labels: RoutingLabelsUpdateStrategy,
-        send_eos: bool,
         stop_condition: JobStopCondition,
-    ) -> Self {
-        let now = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        Self {
+        configuration: JobConfiguration,
+    ) -> Result<Self> {
+        if configuration.min_duration > configuration.max_duration {
+            bail!("Min PTS delta is greater than max PTS delta!");
+        }
+
+        Ok(Self {
             store,
             writer,
             id,
-            pts_sync,
-            db_source_id,
-            resulting_source_id,
-            routing_labels,
-            send_eos,
             position,
             stop_condition,
-            last_pts: None,
-            last_invocation: 0,
-            last_elapsed: Duration::from_secs(0),
-            next_step: now,
-            cached_message: None,
-            last_sent_message: None,
+            configuration,
+        })
+    }
+
+    async fn read_message(&self) -> Result<(Message, Vec<Vec<u8>>)> {
+        let now = Instant::now();
+        loop {
+            let message = self
+                .store
+                .lock()
+                .get_message(&self.configuration.stored_source_id, self.position)
+                .await?;
+            match message {
+                Some((m, _, data)) => {
+                    return Ok((m, data));
+                }
+                None => {
+                    if now.elapsed() > self.configuration.max_idle_duration {
+                        let log_message = format!(
+                                "No message received during the configured {} idle time (seconds). Job Id: {} will be finished!",
+                                self.configuration.max_idle_duration.as_secs(),
+                                self.id
+                            );
+                        log::warn!(target: "replay::db::job::read_message", "{}", &log_message);
+                        bail!("{}", log_message);
+                    }
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+            }
         }
     }
 
-    pub fn get_current_message_pts(&self, m: &Message) -> Option<u128> {
-        if m.is_video_frame() {
-            Some(m.as_video_frame().unwrap().get_creation_timestamp_ns())
+    pub async fn run_until_complete(&mut self) -> Result<()> {
+        if self.configuration.pts_sync {
+            self.run_pts_synchronized_until_complete().await?;
         } else {
-            None
+            self.run_fast_until_complete().await?;
         }
+
+        if self.configuration.send_eos {
+            self.send_either(SendEither::EOS).await?;
+        }
+        Ok(())
     }
 
-    pub fn prepare_message(&self, m: Message) -> Message {
-        let mut message = if m.is_end_of_stream() {
-            let mut eos = m.as_end_of_stream().unwrap().clone();
-            eos.source_id = self.resulting_source_id.clone();
-            Message::end_of_stream(eos)
+    fn prepare_message(&self, m: Message) -> Option<Message> {
+        let message = if m.is_end_of_stream() {
+            if self.configuration.skip_intermediary_eos {
+                None
+            } else {
+                let mut eos = m.as_end_of_stream().unwrap().clone();
+                eos.source_id = self.configuration.resulting_source_id.clone();
+                Some(Message::end_of_stream(eos))
+            }
         } else if m.is_video_frame() {
             let mut f = m.as_video_frame().unwrap().clone();
-            f.set_source_id(&self.resulting_source_id);
-            f.to_message()
+            f.set_source_id(&self.configuration.resulting_source_id);
+            Some(f.to_message())
         } else {
-            m
+            None
         };
 
-        match &self.routing_labels {
-            RoutingLabelsUpdateStrategy::Keep => {}
+        if message.is_none() {
+            return None;
+        }
+        let mut message = message.unwrap();
+
+        match &self.configuration.routing_labels {
+            RoutingLabelsUpdateStrategy::Bypass => {}
             RoutingLabelsUpdateStrategy::Replace(labels) => {
                 message.meta_mut().routing_labels = labels.clone();
             }
@@ -140,279 +212,193 @@ impl Job {
             }
         }
 
-        message
+        Some(message)
     }
 
-    pub fn send_message(
-        &mut self,
-        message: &Message,
-        data: Vec<Vec<u8>>,
-    ) -> Result<Option<Duration>> {
-        let ts = Instant::now();
-        let sliced_data = data.iter().map(|d| d.as_slice()).collect::<Vec<_>>();
+    async fn send_either(&self, one_of: SendEither<'_>) -> Result<()> {
+        let now = Instant::now();
+        loop {
+            let res = match one_of {
+                SendEither::Message(m, data) => {
+                    self.writer
+                        .send_message(&self.configuration.resulting_source_id, m, data)?
+                }
+                SendEither::EOS => self
+                    .writer
+                    .send_eos(&self.configuration.resulting_source_id)?,
+            };
+            loop {
+                if now.elapsed() > self.configuration.max_delivery_duration {
+                    let message = format!(
+                        "Message delivery timeout occurred in job {}. Job will be finished!",
+                        self.id
+                    );
+                    log::warn!(target: "replay::db::job::send_either", "{}", &message);
+                    bail!("{}", message);
+                }
 
-        let result =
-            self.writer
-                .lock()
-                .send_message(&self.resulting_source_id, message, &sliced_data)?;
+                let res = res.try_get()?;
+                if res.is_none() {
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                    break;
+                }
+                let res = res.unwrap()?;
+                match res {
+                    WriterResult::SendTimeout => {
+                        log::warn!("Send timeout occurred in job {}, retrying ...", self.id);
+                        break;
+                    }
+                    WriterResult::AckTimeout(t) => {
+                        let message = format!(
+                            "Ack timeout ({}) occurred in job {}, retrying ...",
+                            t, self.id
+                        );
+                        log::warn!(target: "replay::db::job::send_either", "{}", &message);
+                        break;
+                    }
+                    WriterResult::Ack { .. } => {
+                        return Ok(());
+                    }
+                    WriterResult::Success { .. } => {
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    }
 
-        match result {
-            WriterResult::SendTimeout => {
-                log::warn!("Job {} send timeout", self.id);
-                Ok(None)
+    async fn run_fast_until_complete(&mut self) -> Result<()> {
+        let mut stop_state = JobConditionStopState;
+        loop {
+            let (m, data) = self.read_message().await?;
+            let m = self.prepare_message(m);
+            if m.is_none() {
+                continue;
             }
-            WriterResult::AckTimeout(timeout) => {
-                log::warn!("Job {} ack timeout after {} ms", self.id, timeout);
-                Ok(None)
+            let m = m.unwrap();
+            let sliced_data = data.iter().map(|d| d.as_slice()).collect::<Vec<_>>();
+            self.send_either(SendEither::Message(&m, &sliced_data))
+                .await?;
+
+            self.position += 1;
+            if stop_state.check(self.position, &self.stop_condition, &m) {
+                log::info!("Job Id: {} has been finished by stop condition!", self.id);
+                break;
             }
-            WriterResult::Ack {
-                send_retries_spent,
-                receive_retries_spent,
-                time_spent,
-            } => {
-                log::debug!(
-                    "Job {} sent message {} in {} ms with {} send retries and {} receive retries",
-                    self.id,
-                    self.position,
-                    time_spent,
-                    send_retries_spent,
-                    receive_retries_spent
+        }
+        Ok(())
+    }
+
+    async fn run_pts_synchronized_until_complete(&mut self) -> Result<()> {
+        let mut stop_state = JobConditionStopState;
+        let mut last_sent = Instant::now();
+        let (prev_message, data) = self.read_message().await?;
+        if !prev_message.is_video_frame() {
+            let message = format!(
+                "First message in job {} is not a video frame, job will be finished!",
+                self.id
+            );
+            log::warn!(target: "replay::db::job", "{}", &message);
+            bail!("{}", message);
+        }
+
+        let mut prev_message = Some(prev_message);
+        let mut first_run_data = Some(data);
+        let mut time_spent = Duration::from_secs(0);
+        loop {
+            // avoid double read for the first iteration
+            let (message, data) = if first_run_data.is_none() {
+                self.read_message().await?
+            } else {
+                (
+                    prev_message.as_ref().unwrap().clone(),
+                    first_run_data.take().unwrap(),
+                )
+            };
+
+            let message = self.prepare_message(message);
+            if message.is_none() {
+                continue;
+            }
+            // calculate pause
+            let message = message.unwrap();
+
+            let mut delay = if !message.is_video_frame() {
+                Duration::from_secs(0)
+            } else {
+                let videoframe = message.as_video_frame().unwrap();
+                let prev_video_frame = prev_message.as_ref().unwrap().as_video_frame().unwrap();
+                if prev_video_frame.get_pts() > videoframe.get_pts() {
+                    let message = format!(
+                        "PTS discrepancy detected in job {}. The job will use configured delay for the next frame!",
+                        self.id
+                    );
+                    log::warn!(target: "replay::db::job", "{}", &message);
+                    self.configuration.pts_discrepancy_fix_duration
+                } else {
+                    let pts_diff = videoframe.get_pts() - prev_video_frame.get_pts();
+                    let pts_diff = pts_diff.max(0) as f64;
+                    let (time_base_num, time_base_den) = videoframe.get_time_base();
+                    let pts_diff = pts_diff * time_base_num as f64 / time_base_den as f64;
+                    Duration::from_secs_f64(pts_diff)
+                }
+            };
+
+            if delay > self.configuration.max_duration {
+                let message = format!(
+                    "PTS discrepancy delay is greater than the configured max delay in job {}. The job will use configured delay for the next frame!",
+                    self.id
                 );
-
-                self.position += 1;
-                Ok(Some(ts.elapsed()))
+                log::debug!(target: "replay::db::job", "{}", &message);
+                delay = self.configuration.max_duration;
             }
-            WriterResult::Success {
-                retries_spent,
-                time_spent,
-            } => {
-                log::debug!(
-                    "Job {} sent message {} in {} ms with {} retries",
-                    self.id,
-                    self.position,
-                    time_spent,
-                    retries_spent
+
+            if delay < self.configuration.min_duration {
+                let message = format!(
+                    "PTS discrepancy delay is less than the configured min delay in job {}. The job will use configured delay for the next frame!",
+                    self.id
                 );
-
-                self.position += 1;
-                Ok(Some(ts.elapsed()))
+                log::debug!(target: "replay::db::job", "{}", &message);
+                delay = self.configuration.min_duration;
             }
-        }
-    }
 
-    pub fn advance(&mut self) -> Result<JobAdvanceResult> {
-        let now = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
+            let delay = delay
+                .checked_sub(time_spent)
+                .unwrap_or_else(|| Duration::from_secs(0));
 
-        if self.next_step > now {
-            return Ok(JobAdvanceResult::NextStepTimer(
-                self.next_step.saturating_sub(now),
-            ));
-        }
+            tokio::time::sleep(delay).await;
 
-        let cached = self.cached_message.take();
-        let res = if let Some((m, d)) = cached {
-            Some((m, d))
-        } else {
-            self.store
-                .lock()
-                .get_message(&self.db_source_id, self.position)?
-                .map(|(m, _, d)| (m, d))
-        };
+            let sliced_data = data.iter().map(|d| d.as_slice()).collect::<Vec<_>>();
+            self.send_either(SendEither::Message(&message, &sliced_data))
+                .await?;
 
-        if let Some((message, data)) = res {
-            let message_pts = self.get_current_message_pts(&message);
-            self.next_step = self.calculate_next_step(message_pts, Some(self.last_elapsed));
-            if self.next_step > now {
-                self.cached_message = Some((message, data));
-                return Ok(JobAdvanceResult::NextStepTimer(self.next_step - now));
+            if message.is_video_frame() {
+                time_spent = last_sent.elapsed();
+                last_sent = Instant::now();
             }
-            let prepared_message = self.prepare_message(message);
-            let elapsed = self.send_message(&prepared_message, data)?;
-            if elapsed.is_none() {
-                return Ok(JobAdvanceResult::NextStepTimer(0));
-            }
-            self.last_sent_message = Some(prepared_message);
-            self.last_elapsed = elapsed.unwrap();
-            if let Some(mp) = message_pts {
-                self.last_pts = Some(mp);
-            }
-            self.last_invocation = now;
-            Ok(JobAdvanceResult::NextStepTimer(
-                self.next_step.saturating_sub(now),
-            ))
-        } else {
-            Ok(JobAdvanceResult::Idle)
-        }
-    }
-    fn calculate_next_step(
-        &mut self,
-        pts_sec: Option<u128>,
-        last_op_duration: Option<Duration>,
-    ) -> u128 {
-        if !self.pts_sync {
-            self.last_invocation
-        } else if self.last_pts.is_none() {
-            self.last_invocation
-        } else if pts_sec.is_none() || last_op_duration.is_none() {
-            self.last_invocation
-        } else {
-            let pts_sec = pts_sec.unwrap();
-            let last_op_duration = last_op_duration.unwrap();
+            self.position += 1;
 
-            let pts_delta = pts_sec.saturating_sub(self.last_pts.unwrap());
-            let next_pts_delta_sec = pts_delta.saturating_sub(last_op_duration.as_nanos());
+            if stop_state.check(self.position, &self.stop_condition, &message) {
+                log::info!("Job Id: {} has been finished by stop condition!", self.id);
+                break;
+            }
 
-            self.last_invocation + next_pts_delta_sec
+            prev_message = Some(message);
         }
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::store::{gen_properly_filled_frame, Offset};
-    use crate::ZmqReader;
-    use savant_core::primitives::eos::EndOfStream;
-    use savant_core::transport::zeromq::{ReaderConfig, ReaderResult, WriterConfig};
-    use uuid::Uuid;
-
-    struct MockStore {
-        pub payload: Vec<Option<(Message, Vec<u8>, Vec<Vec<u8>>)>>,
-    }
-
-    impl Store for MockStore {
-        fn add_message(
-            &mut self,
-            _message: &Message,
-            _topic: &[u8],
-            _data: &[Vec<u8>],
-        ) -> Result<usize> {
-            Ok(0)
-        }
-
-        fn get_message(
-            &mut self,
-            _: &str,
-            _id: usize,
-        ) -> Result<Option<(Message, Vec<u8>, Vec<Vec<u8>>)>> {
-            let m = self.payload.remove(0);
-            Ok(m)
-        }
-
-        fn get_first(
-            &mut self,
-            _: &str,
-            _keyframe_uuid: Uuid,
-            _before: Offset,
-        ) -> Result<Option<usize>> {
-            todo!("")
-        }
-    }
+    use crate::job::{JobConfigurationBuilder, RoutingLabelsUpdateStrategy};
+    use anyhow::Result;
 
     #[test]
-    fn test_unsynchronized_advancing() -> Result<()> {
-        let in_writer = ZmqWriter::new(
-            &WriterConfig::new()
-                .url("dealer+bind:tcp://127.0.0.1:11111")?
-                .build()?,
-        )?;
-        let mut in_reader = ZmqReader::new(
-            &ReaderConfig::new()
-                .url("router+connect:tcp://127.0.0.1:11111")?
-                .build()?,
-        )?;
-        let store = Arc::new(Mutex::new(MockStore {
-            payload: vec![
-                Some((
-                    Message::end_of_stream(EndOfStream::new(String::from("source"))),
-                    vec![],
-                    vec![],
-                )),
-                Some((
-                    gen_properly_filled_frame().to_message(),
-                    vec![],
-                    vec![vec![0x0]],
-                )),
-                Some((
-                    gen_properly_filled_frame().to_message(),
-                    vec![],
-                    vec![vec![0x1]],
-                )),
-            ],
-        }));
-
-        let mut job = Job::new(
-            store.clone(),
-            Arc::new(Mutex::new(in_writer)),
-            0,
-            0,
-            false,
-            "source".to_string(),
-            "result".to_string(),
-            RoutingLabelsUpdateStrategy::Keep,
-            false,
-            JobStopCondition::LastKeyFrame(0),
-        );
-
-        let res = job.advance();
-        assert!(matches!(res, Ok(JobAdvanceResult::NextStepTimer(0))));
-        let m = in_reader.receive().unwrap();
-        if let ReaderResult::Message {
-            message,
-            topic,
-            routing_id: _,
-            data,
-        } = m
-        {
-            assert_eq!(message.as_end_of_stream().unwrap().source_id, "result");
-            assert_eq!(topic, b"result");
-            assert!(data.is_empty());
-        } else {
-            panic!("Unexpected message type");
-        }
-
-        let res = job.advance();
-        assert!(matches!(res, Ok(JobAdvanceResult::NextStepTimer(0))));
-        let m = in_reader.receive().unwrap();
-        if let ReaderResult::Message {
-            message,
-            topic,
-            routing_id: _,
-            data,
-        } = m
-        {
-            assert!(message.is_video_frame());
-            assert_eq!(topic, b"result");
-            assert_eq!(data, vec![vec![0x0]]);
-        } else {
-            panic!("Unexpected message type");
-        }
-
-        let res = job.advance();
-        assert!(matches!(res, Ok(JobAdvanceResult::NextStepTimer(0))));
-        let m = in_reader.receive().unwrap();
-        if let ReaderResult::Message {
-            message,
-            topic,
-            routing_id: _,
-            data,
-        } = m
-        {
-            assert!(message.is_video_frame());
-            assert_eq!(topic, b"result");
-            assert_eq!(data, vec![vec![0x1]]);
-        } else {
-            panic!("Unexpected message type");
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_synchronous_advancing() -> Result<()> {
+    fn test_configuration_builder() -> Result<()> {
+        let _ = JobConfigurationBuilder::default()
+            .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
+            .build();
         Ok(())
     }
 }

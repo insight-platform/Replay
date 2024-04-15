@@ -75,7 +75,7 @@ pub struct RocksStore {
 }
 
 impl RocksStore {
-    pub(crate) fn get_source_hash(&mut self, source_id: &str) -> Result<[u8; 16]> {
+    fn get_source_hash(&mut self, source_id: &str) -> Result<[u8; 16]> {
         if let Some(hash) = self.source_id_hashes.get(source_id) {
             return Ok(*hash);
         }
@@ -90,7 +90,7 @@ impl RocksStore {
         Ok(hash_bytes)
     }
 
-    pub(crate) fn current_index_value(&mut self, source_id: &str) -> Result<usize> {
+    fn current_index_value(&mut self, source_id: &str) -> Result<usize> {
         if let Some(index) = self.resident_index_values.get(source_id) {
             return Ok(*index);
         }
@@ -163,7 +163,12 @@ impl RocksStore {
 }
 
 impl super::Store for RocksStore {
-    fn add_message(&mut self, message: &Message, topic: &[u8], data: &[Vec<u8>]) -> Result<usize> {
+    async fn add_message(
+        &mut self,
+        message: &Message,
+        topic: &[u8],
+        data: &[Vec<u8>],
+    ) -> Result<usize> {
         let mut frame_opt = None;
         let source_id = if message.is_video_frame() {
             let frame = message.as_video_frame().unwrap();
@@ -239,7 +244,7 @@ impl super::Store for RocksStore {
         Ok(index)
     }
 
-    fn get_message(
+    async fn get_message(
         &mut self,
         source_id: &str,
         id: usize,
@@ -265,7 +270,7 @@ impl super::Store for RocksStore {
         }
     }
 
-    fn get_first(
+    async fn get_first(
         &mut self,
         source_id: &str,
         keyframe_uuid: Uuid,
@@ -343,8 +348,8 @@ mod tests {
     use crate::store::{gen_properly_filled_frame, Store};
     use savant_core::test::gen_frame;
 
-    #[test]
-    fn test_rocksdb_init() -> Result<()> {
+    #[tokio::test]
+    async fn test_rocksdb_init() -> Result<()> {
         let dir = tempfile::TempDir::new()?;
         let path = dir.path().to_str().unwrap();
         let mut db = RocksStore::new(path, Duration::from_secs(60))?;
@@ -369,8 +374,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_load_message() -> Result<()> {
+    #[tokio::test]
+    async fn test_load_message() -> Result<()> {
         let dir = tempfile::TempDir::new()?;
         let path = dir.path().to_str().unwrap();
         let frame = gen_frame();
@@ -378,8 +383,8 @@ mod tests {
         {
             let mut db = RocksStore::new(path, Duration::from_secs(60))?;
             let m = frame.to_message();
-            let id = db.add_message(&m, &[], &[])?;
-            let (m2, _, _) = db.get_message(&source_id, id)?.unwrap();
+            let id = db.add_message(&m, &[], &[]).await?;
+            let (m2, _, _) = db.get_message(&source_id, id).await?.unwrap();
             assert_eq!(
                 m.as_video_frame().unwrap().get_uuid_u128(),
                 m2.as_video_frame().unwrap().get_uuid_u128()
@@ -387,38 +392,40 @@ mod tests {
         }
         {
             let mut db = RocksStore::new(path, Duration::from_secs(60))?;
-            let (_, _, _) = db.get_message(&source_id, 0)?.unwrap();
+            let (_, _, _) = db.get_message(&source_id, 0).await?.unwrap();
             assert_eq!(db.current_index_value(&source_id)?, 1);
-            let m = db.get_message(&source_id, 1)?;
+            let m = db.get_message(&source_id, 1).await?;
             assert!(m.is_none());
         }
         let _ = RocksStore::remove_db(path);
         Ok(())
     }
 
-    #[test]
-    fn test_find_first_block_in_blocks() -> Result<()> {
+    #[tokio::test]
+    async fn test_find_first_block_in_blocks() -> Result<()> {
         let dir = tempfile::TempDir::new()?;
         let path = dir.path().to_str().unwrap();
         let mut db = RocksStore::new(path, Duration::from_secs(60)).unwrap();
         let f = gen_properly_filled_frame();
         let source_id = f.get_source_id();
-        db.add_message(&f.to_message(), &[], &[]).unwrap();
+        db.add_message(&f.to_message(), &[], &[]).await.unwrap();
         std::thread::sleep(Duration::from_millis(10));
         let f = gen_properly_filled_frame();
-        db.add_message(&f.to_message(), &[], &[]).unwrap();
+        db.add_message(&f.to_message(), &[], &[]).await.unwrap();
         std::thread::sleep(Duration::from_millis(10));
         let mut other_source_frame = gen_properly_filled_frame();
         other_source_frame.set_source_id("other_source_id");
         db.add_message(&other_source_frame.to_message(), &[], &[])
+            .await
             .unwrap();
         std::thread::sleep(Duration::from_millis(10));
         let f = gen_properly_filled_frame();
         let uuid_f3 = f.get_uuid();
-        db.add_message(&f.to_message(), &[], &[]).unwrap();
+        db.add_message(&f.to_message(), &[], &[]).await.unwrap();
 
         let first = db
             .get_first(&source_id, uuid_f3, Offset::Blocks(1))
+            .await
             .unwrap()
             .unwrap();
         assert_eq!(first, 1);
@@ -426,30 +433,32 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_find_first_block_in_duration() -> Result<()> {
+    #[tokio::test]
+    async fn test_find_first_block_in_duration() -> Result<()> {
         let dir = tempfile::TempDir::new()?;
         let path = dir.path().to_str().unwrap();
         let mut db = RocksStore::new(path, Duration::from_secs(60)).unwrap();
         let f = gen_properly_filled_frame();
         let source_id = f.get_source_id();
-        db.add_message(&f.to_message(), &[], &[]).unwrap();
+        db.add_message(&f.to_message(), &[], &[]).await.unwrap();
         std::thread::sleep(Duration::from_millis(10));
         let f = gen_properly_filled_frame();
-        db.add_message(&f.to_message(), &[], &[]).unwrap();
+        db.add_message(&f.to_message(), &[], &[]).await.unwrap();
         std::thread::sleep(Duration::from_millis(10));
         let f = gen_properly_filled_frame();
         let uuid_f3 = f.get_uuid();
-        db.add_message(&f.to_message(), &[], &[]).unwrap();
+        db.add_message(&f.to_message(), &[], &[]).await.unwrap();
 
         let first = db
             .get_first(&source_id, uuid_f3, Offset::Seconds(0.005))
+            .await
             .unwrap()
             .unwrap();
         assert_eq!(first, 1);
 
         let first = db
             .get_first(&source_id, uuid_f3, Offset::Seconds(0.015))
+            .await
             .unwrap()
             .unwrap();
         assert_eq!(first, 0);

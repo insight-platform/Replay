@@ -1,3 +1,4 @@
+use crate::store::rocksdb::RocksStore;
 use crate::store::{to_hex_string, Store};
 use crate::{ZmqReader, ZmqWriter};
 use anyhow::{bail, Result};
@@ -5,18 +6,21 @@ use parking_lot::Mutex;
 use savant_core::transport::zeromq::ReaderResult;
 use std::sync::Arc;
 
-pub struct StreamProcessor {
-    db: Arc<Mutex<dyn Store>>,
+struct StreamProcessor<T: Store> {
+    db: Arc<Mutex<T>>,
     input: ZmqReader,
     output: ZmqWriter,
 }
 
-impl StreamProcessor {
-    pub fn new(db: Arc<Mutex<dyn Store>>, input: ZmqReader, output: ZmqWriter) -> Self {
+impl<T> StreamProcessor<T>
+where
+    T: Store,
+{
+    pub fn new(db: Arc<Mutex<T>>, input: ZmqReader, output: ZmqWriter) -> Self {
         Self { db, input, output }
     }
 
-    pub fn run_once(&mut self) -> Result<()> {
+    pub async fn run_once(&mut self) -> Result<()> {
         let message = self.input.receive();
         match message {
             Ok(m) => match m {
@@ -36,7 +40,7 @@ impl StreamProcessor {
                         || message.is_user_data()
                         || message.is_end_of_stream()
                     {
-                        self.db.lock().add_message(&message, &topic, &data)?;
+                        self.db.lock().add_message(&message, &topic, &data).await?;
                     }
                     let data_slice = data.iter().map(|v| v.as_slice()).collect::<Vec<&[u8]>>();
                     self.output.send_message(
@@ -73,9 +77,9 @@ impl StreamProcessor {
         Ok(())
     }
 
-    pub fn run(&mut self) -> Result<()> {
+    pub async fn run(&mut self) -> Result<()> {
         loop {
-            self.run_once()?
+            self.run_once().await?
         }
     }
 }
@@ -90,8 +94,8 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    #[test]
-    fn test_stream_processor() -> Result<()> {
+    #[tokio::test]
+    async fn test_stream_processor() -> Result<()> {
         let dir = tempfile::TempDir::new()?;
         let path = dir.path().to_str().unwrap();
         let db = crate::store::rocksdb::RocksStore::new(path, Duration::from_secs(60)).unwrap();
@@ -129,9 +133,9 @@ mod tests {
         let uuid = f.get_uuid_u128();
         let m1 = f.to_message();
         in_writer.send_message("test", &m1, &[&[0x01]])?;
-        processor.run_once()?;
+        processor.run_once().await?;
         let res = out_reader.receive()?;
-        let (m2, _, _) = db.lock().get_message("test", 0)?.unwrap();
+        let (m2, _, _) = db.lock().get_message("test", 0).await?.unwrap();
         assert_eq!(uuid, m2.as_video_frame().unwrap().get_uuid_u128());
         match res {
             ReaderResult::Message {
@@ -159,5 +163,21 @@ mod tests {
         }
         std::fs::remove_dir_all(path).unwrap_or_default();
         Ok(())
+    }
+}
+
+pub struct RocksDbStreamProcessor(StreamProcessor<RocksStore>);
+
+impl RocksDbStreamProcessor {
+    pub fn new(db: Arc<Mutex<RocksStore>>, input: ZmqReader, output: ZmqWriter) -> Self {
+        Self(StreamProcessor::new(db, input, output))
+    }
+
+    pub async fn run_once(&mut self) -> Result<()> {
+        self.0.run_once().await
+    }
+
+    pub async fn run(&mut self) -> Result<()> {
+        self.0.run().await
     }
 }

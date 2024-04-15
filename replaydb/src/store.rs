@@ -1,29 +1,74 @@
 pub mod rocksdb;
 
 use anyhow::Result;
+use parking_lot::Mutex;
 use savant_core::message::Message;
 use savant_core::primitives::frame::VideoFrameProxy;
 use savant_core::test::gen_frame;
 use std::fmt::Write;
+use std::sync::Arc;
 use std::time::SystemTime;
 use uuid::Uuid;
+
+pub fn to_hex_string(bytes: &[u8]) -> String {
+    bytes.iter().fold(String::new(), |mut output, b| {
+        let _ = write!(output, "{b:02X}");
+        output
+    })
+}
+
+pub fn gen_properly_filled_frame() -> VideoFrameProxy {
+    let mut f = gen_frame();
+    let (tbn, tbd) = (1, 1_000_000);
+    let now_nanos = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let now = now_nanos as f64 / 1e9f64;
+    let pts = (now * tbd as f64 / tbn as f64) as i64;
+    f.set_pts(pts);
+    f.set_creation_timestamp_ns(now_nanos);
+    f.set_time_base((tbn, tbd));
+    f.set_keyframe(Some(true));
+    f
+}
 
 pub enum Offset {
     Blocks(usize),
     Seconds(f64),
 }
 
-pub trait Store {
-    fn add_message(&mut self, message: &Message, topic: &[u8], data: &[Vec<u8>]) -> Result<usize>;
+pub struct RocksDbStore(Arc<Mutex<rocksdb::RocksStore>>);
+
+impl RocksDbStore {
+    pub fn new(path: &str) -> Result<Self> {
+        Ok(Self(Arc::new(Mutex::new(rocksdb::RocksStore::new(
+            path,
+            Default::default(),
+        )?))))
+    }
+
+    pub fn get_store(&self) -> Arc<Mutex<rocksdb::RocksStore>> {
+        self.0.clone()
+    }
+}
+
+pub(crate) trait Store {
+    async fn add_message(
+        &mut self,
+        message: &Message,
+        topic: &[u8],
+        data: &[Vec<u8>],
+    ) -> Result<usize>;
 
     #[allow(clippy::type_complexity)]
-    fn get_message(
+    async fn get_message(
         &mut self,
         source_id: &str,
         id: usize,
     ) -> Result<Option<(Message, Vec<u8>, Vec<Vec<u8>>)>>;
 
-    fn get_first(
+    async fn get_first(
         &mut self,
         source_id: &str,
         keyframe_uuid: Uuid,
@@ -42,7 +87,7 @@ mod tests {
     }
 
     impl Store for SampleStore {
-        fn add_message(
+        async fn add_message(
             &mut self,
             message: &Message,
             _topic: &[u8],
@@ -59,7 +104,7 @@ mod tests {
             Ok(current_len)
         }
 
-        fn get_message(
+        async fn get_message(
             &mut self,
             _: &str,
             id: usize,
@@ -67,7 +112,7 @@ mod tests {
             Ok(Some((self.messages[id].clone(), vec![], vec![])))
         }
 
-        fn get_first(
+        async fn get_first(
             &mut self,
             _: &str,
             keyframe_uuid: Uuid,
@@ -114,8 +159,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_sample_store() -> Result<()> {
+    #[tokio::test]
+    async fn test_sample_store() -> Result<()> {
         let mut store = SampleStore {
             keyframes: Vec::new(),
             messages: Vec::new(),
@@ -125,64 +170,68 @@ mod tests {
         f.set_keyframe(Some(true));
         f.set_time_base((1, 1));
         f.set_pts(0);
-        store.add_message(&f.to_message(), &[], &[])?;
-        store.add_message(
-            &Message::end_of_stream(EndOfStream::new(String::from(""))),
-            &[],
-            &[],
-        )?;
+        store.add_message(&f.to_message(), &[], &[]).await?;
+        store
+            .add_message(
+                &Message::end_of_stream(EndOfStream::new(String::from(""))),
+                &[],
+                &[],
+            )
+            .await?;
         let mut f = gen_frame();
         f.set_keyframe(Some(false));
         f.set_time_base((1, 1));
         f.set_pts(1);
-        store.add_message(&f.to_message(), &[], &[])?;
+        store.add_message(&f.to_message(), &[], &[]).await?;
 
         let mut f = gen_frame();
         f.set_keyframe(Some(false));
         f.set_time_base((1, 1));
         f.set_pts(2);
-        store.add_message(&f.to_message(), &[], &[])?;
+        store.add_message(&f.to_message(), &[], &[]).await?;
 
         let mut f = gen_frame();
         f.set_keyframe(Some(true));
         f.set_time_base((1, 1));
         f.set_pts(3);
-        store.add_message(&f.to_message(), &[], &[])?;
-        store.add_message(
-            &Message::end_of_stream(EndOfStream::new(String::from(""))),
-            &[],
-            &[],
-        )?;
+        store.add_message(&f.to_message(), &[], &[]).await?;
+        store
+            .add_message(
+                &Message::end_of_stream(EndOfStream::new(String::from(""))),
+                &[],
+                &[],
+            )
+            .await?;
         let mut f = gen_frame();
         f.set_keyframe(Some(false));
         f.set_time_base((1, 1));
         f.set_pts(4);
-        store.add_message(&f.to_message(), &[], &[])?;
+        store.add_message(&f.to_message(), &[], &[]).await?;
 
         let mut f = gen_frame();
         let u = f.get_uuid();
         f.set_keyframe(Some(true));
         f.set_time_base((1, 1));
         f.set_pts(5);
-        store.add_message(&f.to_message(), &[], &[])?;
+        store.add_message(&f.to_message(), &[], &[]).await?;
 
         let mut f = gen_frame();
         f.set_keyframe(Some(false));
         f.set_time_base((1, 1));
         f.set_pts(6);
-        store.add_message(&f.to_message(), &[], &[])?;
+        store.add_message(&f.to_message(), &[], &[]).await?;
 
-        let first = store.get_first("", u, Offset::Blocks(1))?;
+        let first = store.get_first("", u, Offset::Blocks(1)).await?;
         assert_eq!(first, Some(4));
-        let (m, _, _) = store.get_message("", first.unwrap())?.unwrap();
+        let (m, _, _) = store.get_message("", first.unwrap()).await?.unwrap();
         assert!(matches!(
             m.as_video_frame().unwrap().get_keyframe(),
             Some(true)
         ));
 
-        let first_ts = store.get_first("", u, Offset::Seconds(5.0))?;
+        let first_ts = store.get_first("", u, Offset::Seconds(5.0)).await?;
         assert_eq!(first_ts, Some(0));
-        let (m, _, _) = store.get_message("", first_ts.unwrap())?.unwrap();
+        let (m, _, _) = store.get_message("", first_ts.unwrap()).await?.unwrap();
 
         assert!(matches!(
             m.as_video_frame().unwrap().get_keyframe(),
@@ -191,27 +240,4 @@ mod tests {
 
         Ok(())
     }
-}
-
-pub fn to_hex_string(bytes: &[u8]) -> String {
-    bytes.iter().fold(String::new(), |mut output, b| {
-        let _ = write!(output, "{b:02X}");
-        output
-    })
-}
-
-pub fn gen_properly_filled_frame() -> VideoFrameProxy {
-    let mut f = gen_frame();
-    let (tbn, tbd) = (1, 1_000_000);
-    let now_nanos = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let now = now_nanos as f64 / 1e9f64;
-    let pts = (now * tbd as f64 / tbn as f64) as i64;
-    f.set_pts(pts);
-    f.set_creation_timestamp_ns(now_nanos);
-    f.set_time_base((tbn, tbd));
-    f.set_keyframe(Some(true));
-    f
 }
