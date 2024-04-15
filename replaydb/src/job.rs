@@ -47,7 +47,7 @@ pub struct JobConfiguration {
 }
 
 impl JobConfigurationBuilder {
-    pub fn build_validated(&mut self) -> Result<JobConfiguration> {
+    pub fn build_and_validate(&mut self) -> Result<JobConfiguration> {
         let c = self.build()?;
         if c.min_duration > c.max_duration {
             bail!("Min PTS delta is greater than max PTS delta!");
@@ -446,7 +446,7 @@ mod tests {
             .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
             .stored_source_id("source_id".to_string())
             .resulting_source_id("resulting_id".to_string())
-            .build_validated()?;
+            .build_and_validate()?;
         dbg!(c);
         Ok(())
     }
