@@ -20,19 +20,61 @@ pub enum JobStopCondition {
     RealTimeDelta(f64),
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Builder, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, Builder)]
 pub struct JobConfiguration {
+    #[builder(default)]
     pts_sync: bool,
+    #[builder(default)]
     skip_intermediary_eos: bool,
+    #[builder(default)]
     send_eos: bool,
+    #[builder(default)]
     pts_discrepancy_fix_duration: Duration,
+    #[builder(default)]
     min_duration: Duration,
+    #[builder(default)]
     max_duration: Duration,
+    #[builder(default)]
     stored_source_id: String,
+    #[builder(default)]
     resulting_source_id: String,
+    #[builder(default)]
     routing_labels: RoutingLabelsUpdateStrategy,
+    #[builder(default)]
     max_idle_duration: Duration,
+    #[builder(default)]
     max_delivery_duration: Duration,
+}
+
+impl JobConfigurationBuilder {
+    pub fn build_validated(&mut self) -> Result<JobConfiguration> {
+        let c = self.build()?;
+        if c.min_duration > c.max_duration {
+            bail!("Min PTS delta is greater than max PTS delta!");
+        }
+        if c.stored_source_id.is_empty() || c.resulting_source_id.is_empty() {
+            bail!("Stored source id or resulting source id is empty!");
+        }
+        Ok(c)
+    }
+}
+
+impl Default for JobConfiguration {
+    fn default() -> Self {
+        Self {
+            pts_sync: false,
+            skip_intermediary_eos: false,
+            send_eos: false,
+            pts_discrepancy_fix_duration: Duration::from_secs_f64(1_f64 / 33_f64),
+            min_duration: Duration::from_secs_f64(1_f64 / 33_f64),
+            max_duration: Duration::from_secs_f64(1_f64 / 33_f64),
+            stored_source_id: String::new(),
+            resulting_source_id: String::new(),
+            routing_labels: RoutingLabelsUpdateStrategy::Bypass,
+            max_idle_duration: Duration::from_secs(10),
+            max_delivery_duration: Duration::from_secs(10),
+        }
+    }
 }
 
 pub struct JobConditionStopState;
@@ -127,6 +169,10 @@ where
     ) -> Result<Self> {
         if configuration.min_duration > configuration.max_duration {
             bail!("Min PTS delta is greater than max PTS delta!");
+        }
+        if configuration.stored_source_id.is_empty() || configuration.resulting_source_id.is_empty()
+        {
+            bail!("Stored source id or resulting source id is empty!");
         }
 
         Ok(Self {
@@ -396,9 +442,12 @@ mod tests {
 
     #[test]
     fn test_configuration_builder() -> Result<()> {
-        let _ = JobConfigurationBuilder::default()
+        let c = JobConfigurationBuilder::create_empty()
             .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
-            .build();
+            .stored_source_id("source_id".to_string())
+            .resulting_source_id("resulting_id".to_string())
+            .build_validated()?;
+        dbg!(c);
         Ok(())
     }
 }
