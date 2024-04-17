@@ -1,7 +1,7 @@
 use crate::store::rocksdb::RocksStore;
 use crate::store::Store;
 use anyhow::{bail, Result};
-use derive_builder::Builder;
+use configuration::JobConfiguration;
 use parking_lot::Mutex;
 use savant_core::message::Message;
 use savant_core::transport::zeromq::{NonBlockingWriter, WriterResult};
@@ -10,85 +10,12 @@ use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use stop_condition::JobStopCondition;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub enum JobStopCondition {
-    LastKeyFrame(u128),
-    FrameCount(usize),
-    KeyFrameCount(usize),
-    PTSDelta(f64),
-    RealTimeDelta(f64),
-}
+pub mod configuration;
+pub mod stop_condition;
 
-#[derive(Debug, Serialize, Deserialize, Clone, Builder)]
-pub struct JobConfiguration {
-    #[builder(default)]
-    pts_sync: bool,
-    #[builder(default)]
-    skip_intermediary_eos: bool,
-    #[builder(default)]
-    send_eos: bool,
-    #[builder(default)]
-    pts_discrepancy_fix_duration: Duration,
-    #[builder(default)]
-    min_duration: Duration,
-    #[builder(default)]
-    max_duration: Duration,
-    #[builder(default)]
-    stored_source_id: String,
-    #[builder(default)]
-    resulting_source_id: String,
-    #[builder(default)]
-    routing_labels: RoutingLabelsUpdateStrategy,
-    #[builder(default)]
-    max_idle_duration: Duration,
-    #[builder(default)]
-    max_delivery_duration: Duration,
-}
-
-impl JobConfigurationBuilder {
-    pub fn build_and_validate(&mut self) -> Result<JobConfiguration> {
-        let c = self.build()?;
-        if c.min_duration > c.max_duration {
-            bail!("Min PTS delta is greater than max PTS delta!");
-        }
-        if c.stored_source_id.is_empty() || c.resulting_source_id.is_empty() {
-            bail!("Stored source id or resulting source id is empty!");
-        }
-        Ok(c)
-    }
-}
-
-impl Default for JobConfiguration {
-    fn default() -> Self {
-        Self {
-            pts_sync: false,
-            skip_intermediary_eos: false,
-            send_eos: false,
-            pts_discrepancy_fix_duration: Duration::from_secs_f64(1_f64 / 33_f64),
-            min_duration: Duration::from_secs_f64(1_f64 / 33_f64),
-            max_duration: Duration::from_secs_f64(1_f64 / 33_f64),
-            stored_source_id: String::new(),
-            resulting_source_id: String::new(),
-            routing_labels: RoutingLabelsUpdateStrategy::Bypass,
-            max_idle_duration: Duration::from_secs(10),
-            max_delivery_duration: Duration::from_secs(10),
-        }
-    }
-}
-
-pub struct JobConditionStopState;
-
-impl JobConditionStopState {
-    pub fn check(
-        &mut self,
-        _position: usize,
-        _condition: &JobStopCondition,
-        _message: &Message,
-    ) -> bool {
-        false
-    }
-}
+const STD_FPS: f64 = 30.0;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub enum RoutingLabelsUpdateStrategy {
@@ -139,6 +66,7 @@ pub(crate) struct Job<S: Store> {
     stop_condition: JobStopCondition,
     position: usize,
     configuration: JobConfiguration,
+    last_pts: Option<i64>,
 }
 
 impl<S> Debug for Job<S>
@@ -182,6 +110,7 @@ where
             position,
             stop_condition,
             configuration,
+            last_pts: None,
         })
     }
 
@@ -261,6 +190,35 @@ where
         Some(message)
     }
 
+    fn check_discrepant_pts(&mut self, message: &Message) -> Result<bool> {
+        if !message.is_video_frame() {
+            return Ok(false);
+        }
+        let message = message.as_video_frame().unwrap();
+        if self.last_pts.is_none() {
+            self.last_pts = Some(message.get_pts());
+            return Ok(false);
+        }
+        let pts = message.get_pts();
+        let last_pts = self.last_pts.unwrap();
+        self.last_pts = Some(pts);
+
+        if pts < last_pts {
+            let message = format!(
+                "PTS discrepancy detected in job {}: {} < {}!",
+                self.id, pts, last_pts
+            );
+            log::warn!(target: "replay::db::job::handle_discrepant_pts", "{}", &message);
+            if self.configuration.stop_on_incorrect_pts {
+                log::warn!("Job will be finished due to a discrepant pts!");
+                bail!("{}", message);
+            }
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
     async fn send_either(&self, one_of: SendEither<'_>) -> Result<()> {
         let now = Instant::now();
         loop {
@@ -314,7 +272,6 @@ where
     }
 
     async fn run_fast_until_complete(&mut self) -> Result<()> {
-        let mut stop_state = JobConditionStopState;
         loop {
             let (m, data) = self.read_message().await?;
             let m = self.prepare_message(m);
@@ -322,12 +279,14 @@ where
                 continue;
             }
             let m = m.unwrap();
+            self.check_discrepant_pts(&m)?;
+
             let sliced_data = data.iter().map(|d| d.as_slice()).collect::<Vec<_>>();
             self.send_either(SendEither::Message(&m, &sliced_data))
                 .await?;
 
             self.position += 1;
-            if stop_state.check(self.position, &self.stop_condition, &m) {
+            if self.stop_condition.check(&m) {
                 log::info!("Job Id: {} has been finished by stop condition!", self.id);
                 break;
             }
@@ -336,7 +295,6 @@ where
     }
 
     async fn run_pts_synchronized_until_complete(&mut self) -> Result<()> {
-        let mut stop_state = JobConditionStopState;
         let mut last_sent = Instant::now();
         let (prev_message, data) = self.read_message().await?;
         if !prev_message.is_video_frame() {
@@ -374,12 +332,7 @@ where
             } else {
                 let videoframe = message.as_video_frame().unwrap();
                 let prev_video_frame = prev_message.as_ref().unwrap().as_video_frame().unwrap();
-                if prev_video_frame.get_pts() > videoframe.get_pts() {
-                    let message = format!(
-                        "PTS discrepancy detected in job {}. The job will use configured delay for the next frame!",
-                        self.id
-                    );
-                    log::warn!(target: "replay::db::job", "{}", &message);
+                if self.check_discrepant_pts(&message)? {
                     self.configuration.pts_discrepancy_fix_duration
                 } else {
                     let pts_diff = videoframe.get_pts() - prev_video_frame.get_pts();
@@ -424,7 +377,7 @@ where
             }
             self.position += 1;
 
-            if stop_state.check(self.position, &self.stop_condition, &message) {
+            if self.stop_condition.check(&message) {
                 log::info!("Job Id: {} has been finished by stop condition!", self.id);
                 break;
             }
@@ -437,12 +390,13 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::job::{JobConfigurationBuilder, RoutingLabelsUpdateStrategy};
+    use crate::job::configuration::JobConfigurationBuilder;
+    use crate::job::RoutingLabelsUpdateStrategy;
     use anyhow::Result;
 
     #[test]
     fn test_configuration_builder() -> Result<()> {
-        let c = JobConfigurationBuilder::create_empty()
+        let c = JobConfigurationBuilder::default()
             .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
             .stored_source_id("source_id".to_string())
             .resulting_source_id("resulting_id".to_string())

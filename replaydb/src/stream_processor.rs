@@ -24,6 +24,9 @@ where
         let message = self.input.receive();
         match message {
             Ok(m) => match m {
+                ReaderResult::Blacklisted(topic) => {
+                    log::debug!("Received blacklisted message: {:?}", to_hex_string(&topic));
+                }
                 ReaderResult::Message {
                     message,
                     topic,
@@ -138,6 +141,9 @@ mod tests {
         let (m2, _, _) = db.lock().get_message("test", 0).await?.unwrap();
         assert_eq!(uuid, m2.as_video_frame().unwrap().get_uuid_u128());
         match res {
+            ReaderResult::Blacklisted(topic) => {
+                panic!("Blacklisted message: {:?}", topic);
+            }
             ReaderResult::Message {
                 message,
                 topic,
