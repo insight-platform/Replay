@@ -409,16 +409,13 @@ mod tests {
         let f = gen_properly_filled_frame();
         let source_id = f.get_source_id();
         db.add_message(&f.to_message(), &[], &[]).await.unwrap();
-        std::thread::sleep(Duration::from_millis(10));
         let f = gen_properly_filled_frame();
         db.add_message(&f.to_message(), &[], &[]).await.unwrap();
-        std::thread::sleep(Duration::from_millis(10));
         let mut other_source_frame = gen_properly_filled_frame();
         other_source_frame.set_source_id("other_source_id");
         db.add_message(&other_source_frame.to_message(), &[], &[])
             .await
             .unwrap();
-        std::thread::sleep(Duration::from_millis(10));
         let f = gen_properly_filled_frame();
         let uuid_f3 = f.get_uuid();
         db.add_message(&f.to_message(), &[], &[]).await.unwrap();

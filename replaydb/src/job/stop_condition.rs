@@ -109,6 +109,7 @@ impl JobStopCondition {
 mod tests {
     use super::JobStopCondition;
     use crate::store::gen_properly_filled_frame;
+    use savant_core::utils::uuid_v7::incremental_uuid_v7;
     use std::thread;
     use std::time::Duration;
 
@@ -116,7 +117,7 @@ mod tests {
     fn test_last_frame_stop_condition() {
         let frame_before = gen_properly_filled_frame();
         thread::sleep(Duration::from_millis(1));
-        let mut stop_condition = JobStopCondition::last_frame(uuid::Uuid::now_v7().as_u128());
+        let mut stop_condition = JobStopCondition::last_frame(incremental_uuid_v7().as_u128());
         assert!(!stop_condition.check(&frame_before.to_message()));
         thread::sleep(Duration::from_millis(1));
         let frame_after = gen_properly_filled_frame();

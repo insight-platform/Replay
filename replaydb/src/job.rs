@@ -401,6 +401,7 @@ mod tests {
     use savant_core::transport::zeromq::{
         NonBlockingReader, NonBlockingWriter, ReaderConfig, WriterConfig,
     };
+    use savant_core::utils::uuid_v7::incremental_uuid_v7;
     use std::sync::Arc;
     use std::time::Duration;
     use tokio::time::sleep;
@@ -506,7 +507,7 @@ mod tests {
             w.clone(),
             0,
             0,
-            JobStopCondition::last_frame(Uuid::now_v7().as_u128()),
+            JobStopCondition::last_frame(incremental_uuid_v7().as_u128()),
             job_conf,
         )?;
         let m = job.read_message().await?;
@@ -549,7 +550,7 @@ mod tests {
             w.clone(),
             0,
             0,
-            JobStopCondition::last_frame(Uuid::now_v7().as_u128()),
+            JobStopCondition::last_frame(incremental_uuid_v7().as_u128()),
             job_conf,
         )?;
         let now = tokio::time::Instant::now();
@@ -585,7 +586,7 @@ mod tests {
             w.clone(),
             0,
             0,
-            JobStopCondition::last_frame(Uuid::now_v7().as_u128()),
+            JobStopCondition::last_frame(incremental_uuid_v7().as_u128()),
             job_conf,
         )?;
 
@@ -635,7 +636,7 @@ mod tests {
             w.clone(),
             0,
             0,
-            JobStopCondition::last_frame(Uuid::now_v7().as_u128()),
+            JobStopCondition::last_frame(incremental_uuid_v7().as_u128()),
             job_conf,
         )?;
 

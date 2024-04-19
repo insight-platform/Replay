@@ -1943,8 +1943,8 @@ dependencies = [
 
 [[package]]
 name = "savant_core"
-version = "0.2.26"
-source = "git+https://github.com/insight-platform/savant-rs?tag=0.2.26#b2bd381ebc9ce0e92667405be7acfc61764998d0"
+version = "0.2.27"
+source = "git+https://github.com/insight-platform/savant-rs?tag=0.2.27#fd94be847387768f5284ea039a3dae53e2f7ad95"
 dependencies = [
  "anyhow",
  "bytes",
@@ -1968,6 +1968,7 @@ dependencies = [
  "parking_lot",
  "prost",
  "prost-types",
+ "rand",
  "rayon",
  "regex",
  "savant-protobuf",
