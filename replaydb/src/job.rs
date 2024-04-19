@@ -574,6 +574,10 @@ mod tests {
             .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
             .stored_source_id("source_id".to_string())
             .resulting_source_id("resulting_id".to_string())
+            .routing_labels(RoutingLabelsUpdateStrategy::Replace(vec![
+                "label-1".to_string(),
+                "label-2".to_string(),
+            ]))
             .build_and_validate()?;
 
         let job = Job::new(
@@ -587,13 +591,22 @@ mod tests {
 
         let m = job.prepare_message(gen_properly_filled_frame().to_message());
         assert!(m.is_some());
-        let m = m.unwrap().as_video_frame().unwrap();
+        let m = m.unwrap();
+        assert_eq!(
+            m.get_labels(),
+            vec!["label-1".to_string(), "label-2".to_string()]
+        );
+        let m = m.as_video_frame().unwrap();
         assert_eq!(m.get_source_id(), "resulting_id".to_string());
         let m = job.prepare_message(Message::end_of_stream(EndOfStream::new(
             "source_id".to_string(),
         )));
         assert!(m.is_some());
         let m = m.unwrap();
+        assert_eq!(
+            m.get_labels(),
+            vec!["label-1".to_string(), "label-2".to_string()]
+        );
         let eos = m.as_end_of_stream().unwrap();
         assert_eq!(eos.source_id, "resulting_id".to_string());
 
