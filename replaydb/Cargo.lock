@@ -1943,8 +1943,8 @@ dependencies = [
 
 [[package]]
 name = "savant_core"
-version = "0.2.25"
-source = "git+https://github.com/insight-platform/savant-rs?tag=0.2.25#f34c2f4240e73c358c30f293ebaba04ef0ef059a"
+version = "0.2.26"
+source = "git+https://github.com/insight-platform/savant-rs?tag=0.2.26#b2bd381ebc9ce0e92667405be7acfc61764998d0"
 dependencies = [
  "anyhow",
  "bytes",

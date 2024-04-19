@@ -5,17 +5,9 @@ use parking_lot::Mutex;
 use savant_core::message::Message;
 use savant_core::primitives::frame::VideoFrameProxy;
 use savant_core::test::gen_frame;
-use std::fmt::Write;
 use std::sync::Arc;
 use std::time::SystemTime;
 use uuid::Uuid;
-
-pub fn to_hex_string(bytes: &[u8]) -> String {
-    bytes.iter().fold(String::new(), |mut output, b| {
-        let _ = write!(output, "{b:02X}");
-        output
-    })
-}
 
 pub fn gen_properly_filled_frame() -> VideoFrameProxy {
     let mut f = gen_frame();

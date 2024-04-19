@@ -1,6 +1,6 @@
 use crate::store::rocksdb::RocksStore;
-use crate::store::{to_hex_string, Store};
-use crate::{ZmqReader, ZmqWriter};
+use crate::store::Store;
+use crate::{topic_to_string, ZmqReader, ZmqWriter};
 use anyhow::{bail, Result};
 use parking_lot::Mutex;
 use savant_core::transport::zeromq::ReaderResult;
@@ -25,7 +25,7 @@ where
         match message {
             Ok(m) => match m {
                 ReaderResult::Blacklisted(topic) => {
-                    log::debug!("Received blacklisted message: {:?}", to_hex_string(&topic));
+                    log::debug!("Received blacklisted message: {}", topic_to_string(&topic));
                 }
                 ReaderResult::Message {
                     message,
@@ -34,9 +34,9 @@ where
                     data,
                 } => {
                     log::debug!(
-                        "Received message: topic: {:?}, routing_id: {:?}, message: {:?}",
-                        to_hex_string(&topic),
-                        to_hex_string(routing_id.as_ref().unwrap_or(&Vec::new())),
+                        "Received message: topic: {}, routing_id: {}, message: {:?}",
+                        topic_to_string(&topic),
+                        topic_to_string(routing_id.as_ref().unwrap_or(&Vec::new())),
                         message
                     );
                     if message.is_video_frame()
@@ -58,15 +58,15 @@ where
                 ReaderResult::PrefixMismatch { topic, routing_id } => {
                     log::warn!(
                         "Received message with mismatched prefix: topic: {:?}, routing_id: {:?}",
-                        to_hex_string(&topic),
-                        to_hex_string(routing_id.as_ref().unwrap_or(&Vec::new()))
+                        topic_to_string(&topic),
+                        topic_to_string(routing_id.as_ref().unwrap_or(&Vec::new()))
                     );
                 }
                 ReaderResult::RoutingIdMismatch { topic, routing_id } => {
                     log::warn!(
                             "Received message with mismatched routing_id: topic: {:?}, routing_id: {:?}",
-                            to_hex_string(&topic),
-                            to_hex_string(routing_id.as_ref().unwrap_or(&Vec::new()))
+                            topic_to_string(&topic),
+                            topic_to_string(routing_id.as_ref().unwrap_or(&Vec::new()))
                         );
                 }
                 ReaderResult::TooShort(m) => {

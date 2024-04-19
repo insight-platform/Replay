@@ -122,20 +122,20 @@ where
                 .lock()
                 .get_message(&self.configuration.stored_source_id, self.position)
                 .await?;
+            if now.elapsed() > self.configuration.max_idle_duration {
+                let log_message = format!(
+                    "No message received during the configured {} idle time (ms). Job Id: {} will be finished!",
+                    self.configuration.max_idle_duration.as_millis(),
+                    self.id
+                );
+                log::warn!(target: "replay::db::job::read_message", "{}", &log_message);
+                bail!("{}", log_message);
+            }
             match message {
                 Some((m, _, data)) => {
                     return Ok((m, data));
                 }
                 None => {
-                    if now.elapsed() > self.configuration.max_idle_duration {
-                        let log_message = format!(
-                                "No message received during the configured {} idle time (seconds). Job Id: {} will be finished!",
-                                self.configuration.max_idle_duration.as_secs(),
-                                self.id
-                            );
-                        log::warn!(target: "replay::db::job::read_message", "{}", &log_message);
-                        bail!("{}", log_message);
-                    }
                     tokio::time::sleep(Duration::from_millis(1)).await;
                 }
             }
@@ -391,17 +391,175 @@ where
 #[cfg(test)]
 mod tests {
     use crate::job::configuration::JobConfigurationBuilder;
-    use crate::job::RoutingLabelsUpdateStrategy;
+    use crate::job::stop_condition::JobStopCondition;
+    use crate::job::{Job, RoutingLabelsUpdateStrategy};
+    use crate::store::{gen_properly_filled_frame, Offset, Store};
     use anyhow::Result;
+    use parking_lot::Mutex;
+    use savant_core::message::Message;
+    use savant_core::transport::zeromq::{
+        NonBlockingReader, NonBlockingWriter, ReaderConfig, WriterConfig,
+    };
+    use std::sync::Arc;
+    use std::time::Duration;
+    use tokio::time::sleep;
+    use uuid::Uuid;
+
+    struct MockStore {
+        pub messages: Vec<(Option<(Message, Vec<u8>, Vec<Vec<u8>>)>, Duration)>,
+    }
+
+    impl Store for MockStore {
+        async fn add_message(
+            &mut self,
+            _message: &Message,
+            _topic: &[u8],
+            _data: &[Vec<u8>],
+        ) -> Result<usize> {
+            unreachable!("MockStore::add_message")
+        }
+
+        async fn get_message(
+            &mut self,
+            _source_id: &str,
+            _id: usize,
+        ) -> Result<Option<(Message, Vec<u8>, Vec<Vec<u8>>)>> {
+            let (m, d) = self.messages.remove(0);
+            sleep(d).await;
+            Ok(m)
+        }
+
+        async fn get_first(
+            &mut self,
+            _source_id: &str,
+            _keyframe_uuid: Uuid,
+            _before: Offset,
+        ) -> Result<Option<usize>> {
+            unreachable!("MockStore::get_first")
+        }
+    }
 
     #[test]
     fn test_configuration_builder() -> Result<()> {
-        let c = JobConfigurationBuilder::default()
+        let _ = JobConfigurationBuilder::default()
             .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
             .stored_source_id("source_id".to_string())
             .resulting_source_id("resulting_id".to_string())
             .build_and_validate()?;
-        dbg!(c);
+        Ok(())
+    }
+
+    fn get_channel() -> Result<(NonBlockingReader, Arc<NonBlockingWriter>)> {
+        let dir = tempfile::TempDir::new()?;
+        let path = dir.path().to_str().unwrap();
+        let mut writer = NonBlockingWriter::new(
+            &WriterConfig::new()
+                .url(&format!("dealer+connect:ipc://{}/in", path))?
+                .build()?,
+            100,
+        )?;
+        writer.start()?;
+        let mut reader = NonBlockingReader::new(
+            &ReaderConfig::new()
+                .url(&format!("router+bind:ipc://{}/in", path))?
+                .build()?,
+            100,
+        )?;
+        reader.start()?;
+        Ok((reader, Arc::new(writer)))
+    }
+
+    fn shutdown_channel(mut r: NonBlockingReader, mut w: NonBlockingWriter) -> Result<()> {
+        r.shutdown()?;
+        w.shutdown()?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_read_message() -> Result<()> {
+        let (r, w) = get_channel()?;
+
+        let store = MockStore {
+            messages: vec![
+                (
+                    Some((gen_properly_filled_frame().to_message(), vec![], vec![])),
+                    Duration::from_millis(10),
+                ),
+                (
+                    Some((gen_properly_filled_frame().to_message(), vec![], vec![])),
+                    Duration::from_millis(100),
+                ),
+                (None, Duration::from_millis(1)),
+            ],
+        };
+
+        let job_conf = JobConfigurationBuilder::default()
+            .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
+            .stored_source_id("source_id".to_string())
+            .resulting_source_id("resulting_id".to_string())
+            .max_idle_duration(Duration::from_millis(50))
+            .build_and_validate()?;
+
+        let s = Arc::new(Mutex::new(store));
+        let job = Job::new(
+            s.clone(),
+            w.clone(),
+            0,
+            0,
+            JobStopCondition::last_frame(Uuid::now_v7().as_u128()),
+            job_conf,
+        )?;
+        let m = job.read_message().await?;
+        assert_eq!(m.0.is_video_frame(), true);
+        let m = job.read_message().await;
+        assert!(m.is_err());
+
+        drop(job);
+        let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
+        shutdown_channel(r, w)?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_read_no_data() -> Result<()> {
+        let (r, w) = get_channel()?;
+
+        let store = MockStore {
+            messages: vec![
+                (None, Duration::from_millis(10)),
+                (None, Duration::from_millis(10)),
+                (
+                    Some((gen_properly_filled_frame().to_message(), vec![], vec![])),
+                    Duration::from_millis(10),
+                ),
+                (None, Duration::from_millis(1)),
+            ],
+        };
+
+        let job_conf = JobConfigurationBuilder::default()
+            .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
+            .stored_source_id("source_id".to_string())
+            .resulting_source_id("resulting_id".to_string())
+            .max_idle_duration(Duration::from_millis(50))
+            .build_and_validate()?;
+
+        let s = Arc::new(Mutex::new(store));
+        let job = Job::new(
+            s.clone(),
+            w.clone(),
+            0,
+            0,
+            JobStopCondition::last_frame(Uuid::now_v7().as_u128()),
+            job_conf,
+        )?;
+        let now = tokio::time::Instant::now();
+        let m = job.read_message().await?;
+        assert_eq!(m.0.is_video_frame(), true);
+        assert!(now.elapsed() > Duration::from_millis(32));
+
+        drop(job);
+        let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
+        shutdown_channel(r, w)?;
         Ok(())
     }
 }
