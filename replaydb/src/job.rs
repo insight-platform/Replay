@@ -142,20 +142,7 @@ where
         }
     }
 
-    pub async fn run_until_complete(&mut self) -> Result<()> {
-        if self.configuration.pts_sync {
-            self.run_pts_synchronized_until_complete().await?;
-        } else {
-            self.run_fast_until_complete().await?;
-        }
-
-        if self.configuration.send_eos {
-            self.send_either(SendEither::EOS).await?;
-        }
-        Ok(())
-    }
-
-    fn prepare_message(&self, m: Message) -> Option<Message> {
+    pub(self) fn prepare_message(&self, m: Message) -> Option<Message> {
         let message = if m.is_end_of_stream() {
             if self.configuration.skip_intermediary_eos {
                 None
@@ -269,6 +256,19 @@ where
                 }
             }
         }
+    }
+
+    pub async fn run_until_complete(&mut self) -> Result<()> {
+        if self.configuration.pts_sync {
+            self.run_pts_synchronized_until_complete().await?;
+        } else {
+            self.run_fast_until_complete().await?;
+        }
+
+        if self.configuration.send_eos {
+            self.send_either(SendEither::EOS).await?;
+        }
+        Ok(())
     }
 
     async fn run_fast_until_complete(&mut self) -> Result<()> {
@@ -397,6 +397,7 @@ mod tests {
     use anyhow::Result;
     use parking_lot::Mutex;
     use savant_core::message::Message;
+    use savant_core::primitives::eos::EndOfStream;
     use savant_core::transport::zeromq::{
         NonBlockingReader, NonBlockingWriter, ReaderConfig, WriterConfig,
     };
@@ -492,6 +493,7 @@ mod tests {
                 (None, Duration::from_millis(1)),
             ],
         };
+        let store = Arc::new(Mutex::new(store));
 
         let job_conf = JobConfigurationBuilder::default()
             .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
@@ -499,10 +501,8 @@ mod tests {
             .resulting_source_id("resulting_id".to_string())
             .max_idle_duration(Duration::from_millis(50))
             .build_and_validate()?;
-
-        let s = Arc::new(Mutex::new(store));
         let job = Job::new(
-            s.clone(),
+            store,
             w.clone(),
             0,
             0,
@@ -535,6 +535,7 @@ mod tests {
                 (None, Duration::from_millis(1)),
             ],
         };
+        let store = Arc::new(Mutex::new(store));
 
         let job_conf = JobConfigurationBuilder::default()
             .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
@@ -543,9 +544,8 @@ mod tests {
             .max_idle_duration(Duration::from_millis(50))
             .build_and_validate()?;
 
-        let s = Arc::new(Mutex::new(store));
         let job = Job::new(
-            s.clone(),
+            store,
             w.clone(),
             0,
             0,
@@ -556,6 +556,85 @@ mod tests {
         let m = job.read_message().await?;
         assert_eq!(m.0.is_video_frame(), true);
         assert!(now.elapsed() > Duration::from_millis(32));
+
+        drop(job);
+        let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
+        shutdown_channel(r, w)?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_prepare_message() -> Result<()> {
+        let (r, w) = get_channel()?;
+
+        let store = MockStore { messages: vec![] };
+        let store = Arc::new(Mutex::new(store));
+
+        let job_conf = JobConfigurationBuilder::default()
+            .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
+            .stored_source_id("source_id".to_string())
+            .resulting_source_id("resulting_id".to_string())
+            .build_and_validate()?;
+
+        let job = Job::new(
+            store.clone(),
+            w.clone(),
+            0,
+            0,
+            JobStopCondition::last_frame(Uuid::now_v7().as_u128()),
+            job_conf,
+        )?;
+
+        let m = job.prepare_message(gen_properly_filled_frame().to_message());
+        assert!(m.is_some());
+        let m = m.unwrap().as_video_frame().unwrap();
+        assert_eq!(m.get_source_id(), "resulting_id".to_string());
+        let m = job.prepare_message(Message::end_of_stream(EndOfStream::new(
+            "source_id".to_string(),
+        )));
+        assert!(m.is_some());
+        let m = m.unwrap();
+        let eos = m.as_end_of_stream().unwrap();
+        assert_eq!(eos.source_id, "resulting_id".to_string());
+
+        drop(job);
+        let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
+        shutdown_channel(r, w)?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_prepare_message_skip_intermediary_eos() -> Result<()> {
+        let (r, w) = get_channel()?;
+
+        let store = MockStore { messages: vec![] };
+        let store = Arc::new(Mutex::new(store));
+
+        let job_conf = JobConfigurationBuilder::default()
+            .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
+            .stored_source_id("source_id".to_string())
+            .resulting_source_id("resulting_id".to_string())
+            .skip_intermediary_eos(true)
+            .build_and_validate()?;
+
+        let job = Job::new(
+            store.clone(),
+            w.clone(),
+            0,
+            0,
+            JobStopCondition::last_frame(Uuid::now_v7().as_u128()),
+            job_conf,
+        )?;
+
+        let m = job.prepare_message(gen_properly_filled_frame().to_message());
+        assert!(m.is_some());
+        let m = m.unwrap().as_video_frame().unwrap();
+        assert_eq!(m.get_source_id(), "resulting_id".to_string());
+
+        let m = job.prepare_message(Message::end_of_stream(EndOfStream::new(
+            "source_id".to_string(),
+        )));
+        assert!(m.is_none());
 
         drop(job);
         let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
