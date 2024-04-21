@@ -177,7 +177,7 @@ where
         Some(message)
     }
 
-    fn check_discrepant_pts(&mut self, message: &Message) -> Result<bool> {
+    fn check_pts_decrease(&mut self, message: &Message) -> Result<bool> {
         if !message.is_video_frame() {
             return Ok(false);
         }
@@ -279,7 +279,7 @@ where
                 continue;
             }
             let m = m.unwrap();
-            self.check_discrepant_pts(&m)?;
+            self.check_pts_decrease(&m)?;
 
             let sliced_data = data.iter().map(|d| d.as_slice()).collect::<Vec<_>>();
             self.send_either(SendEither::Message(&m, &sliced_data))
@@ -332,7 +332,7 @@ where
             } else {
                 let videoframe = message.as_video_frame().unwrap();
                 let prev_video_frame = prev_message.as_ref().unwrap().as_video_frame().unwrap();
-                if self.check_discrepant_pts(&message)? {
+                if self.check_pts_decrease(&message)? {
                     self.configuration.pts_discrepancy_fix_duration
                 } else {
                     let pts_diff = videoframe.get_pts() - prev_video_frame.get_pts();
@@ -690,7 +690,7 @@ mod tests {
         )?;
 
         let eos = Message::end_of_stream(EndOfStream::new("source_id".to_string()));
-        let res = job.check_discrepant_pts(&eos)?;
+        let res = job.check_pts_decrease(&eos)?;
         assert_eq!(res, false);
 
         let first = gen_properly_filled_frame().to_message();
@@ -701,13 +701,13 @@ mod tests {
         sleep(Duration::from_millis(1)).await;
         let third = gen_properly_filled_frame().to_message();
 
-        let res = job.check_discrepant_pts(&first)?;
+        let res = job.check_pts_decrease(&first)?;
         assert_eq!(res, false);
 
-        let res = job.check_discrepant_pts(&third)?;
+        let res = job.check_pts_decrease(&third)?;
         assert_eq!(res, false);
 
-        let res = job.check_discrepant_pts(&second)?;
+        let res = job.check_pts_decrease(&second)?;
         assert_eq!(res, true);
         drop(job);
         let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
@@ -743,10 +743,10 @@ mod tests {
         sleep(Duration::from_millis(1)).await;
         let second = gen_properly_filled_frame().to_message();
 
-        let res = job.check_discrepant_pts(&second)?;
+        let res = job.check_pts_decrease(&second)?;
         assert_eq!(res, false);
 
-        let res = job.check_discrepant_pts(&first);
+        let res = job.check_pts_decrease(&first);
         assert!(res.is_err());
         drop(job);
         let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
