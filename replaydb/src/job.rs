@@ -464,6 +464,7 @@ mod tests {
             &ReaderConfig::new()
                 .url(&format!("router+bind:ipc://{}/in", path))?
                 .with_fix_ipc_permissions(Some(0o777))?
+                .with_receive_timeout(1000)?
                 .build()?,
             100,
         )?;
@@ -476,8 +477,14 @@ mod tests {
     }
 
     fn shutdown_channel(mut r: NonBlockingReader, mut w: NonBlockingWriter) -> Result<()> {
-        r.shutdown()?;
-        w.shutdown()?;
+        if !r.is_shutdown() {
+            r.shutdown()?;
+        }
+
+        if !w.is_shutdown() {
+            w.shutdown()?;
+        }
+
         Ok(())
     }
 
@@ -758,7 +765,6 @@ mod tests {
             .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
             .stored_source_id("source_id".to_string())
             .resulting_source_id("resulting_id".to_string())
-            .stop_on_incorrect_pts(true)
             .build_and_validate()?;
 
         let job = Job::new(
@@ -770,7 +776,6 @@ mod tests {
             job_conf,
         )?;
         job.send_either(SendEither::EOS).await?;
-        sleep(Duration::from_millis(1)).await;
         let res = r.receive()?;
         assert!(matches!(
             res,
@@ -781,6 +786,40 @@ mod tests {
                 data: _
             } if message.is_end_of_stream() && topic == b"resulting_id"
         ));
+
+        drop(job);
+        let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
+        shutdown_channel(r, w)?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_send_either_timeout() -> Result<()> {
+        let (mut r, w) = get_channel().await?;
+
+        let store = MockStore { messages: vec![] };
+        let store = Arc::new(Mutex::new(store));
+
+        let job_conf = JobConfigurationBuilder::default()
+            .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
+            .stored_source_id("source_id".to_string())
+            .resulting_source_id("resulting_id".to_string())
+            .stop_on_incorrect_pts(true)
+            .max_delivery_duration(Duration::from_millis(300))
+            .build_and_validate()?;
+
+        let job = Job::new(
+            store.clone(),
+            w.clone(),
+            0,
+            0,
+            JobStopCondition::last_frame(incremental_uuid_v7().as_u128()),
+            job_conf,
+        )?;
+        r.shutdown()?;
+        let res = job.send_either(SendEither::EOS).await;
+        assert!(res.is_err());
 
         drop(job);
         let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
