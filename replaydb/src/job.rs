@@ -209,7 +209,7 @@ where
     async fn send_either(&self, one_of: SendEither<'_>) -> Result<()> {
         let now = Instant::now();
         loop {
-            let res = match one_of {
+            let send_res = match one_of {
                 SendEither::Message(m, data) => {
                     self.writer
                         .send_message(&self.configuration.resulting_source_id, m, data)?
@@ -228,10 +228,10 @@ where
                     bail!("{}", message);
                 }
 
-                let res = res.try_get()?;
+                let res = send_res.try_get()?;
                 if res.is_none() {
                     tokio::time::sleep(Duration::from_millis(1)).await;
-                    break;
+                    continue;
                 }
                 let res = res.unwrap()?;
                 match res {
@@ -392,14 +392,14 @@ where
 mod tests {
     use crate::job::configuration::JobConfigurationBuilder;
     use crate::job::stop_condition::JobStopCondition;
-    use crate::job::{Job, RoutingLabelsUpdateStrategy};
+    use crate::job::{Job, RoutingLabelsUpdateStrategy, SendEither};
     use crate::store::{gen_properly_filled_frame, Offset, Store};
     use anyhow::Result;
     use parking_lot::Mutex;
     use savant_core::message::Message;
     use savant_core::primitives::eos::EndOfStream;
     use savant_core::transport::zeromq::{
-        NonBlockingReader, NonBlockingWriter, ReaderConfig, WriterConfig,
+        NonBlockingReader, NonBlockingWriter, ReaderConfig, ReaderResult, WriterConfig,
     };
     use savant_core::utils::uuid_v7::incremental_uuid_v7;
     use std::sync::Arc;
@@ -451,7 +451,7 @@ mod tests {
         Ok(())
     }
 
-    fn get_channel() -> Result<(NonBlockingReader, Arc<NonBlockingWriter>)> {
+    async fn get_channel() -> Result<(NonBlockingReader, Arc<NonBlockingWriter>)> {
         let dir = tempfile::TempDir::new()?;
         let path = dir.path().to_str().unwrap();
         let mut writer = NonBlockingWriter::new(
@@ -460,14 +460,18 @@ mod tests {
                 .build()?,
             100,
         )?;
-        writer.start()?;
         let mut reader = NonBlockingReader::new(
             &ReaderConfig::new()
                 .url(&format!("router+bind:ipc://{}/in", path))?
+                .with_fix_ipc_permissions(Some(0o777))?
                 .build()?,
             100,
         )?;
         reader.start()?;
+        sleep(Duration::from_millis(100)).await;
+        writer.start()?;
+        sleep(Duration::from_millis(100)).await;
+
         Ok((reader, Arc::new(writer)))
     }
 
@@ -479,7 +483,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_message() -> Result<()> {
-        let (r, w) = get_channel()?;
+        let (r, w) = get_channel().await?;
 
         let store = MockStore {
             messages: vec![
@@ -523,7 +527,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_no_data() -> Result<()> {
-        let (r, w) = get_channel()?;
+        let (r, w) = get_channel().await?;
 
         let store = MockStore {
             messages: vec![
@@ -566,7 +570,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_prepare_message() -> Result<()> {
-        let (r, w) = get_channel()?;
+        let (r, w) = get_channel().await?;
 
         let store = MockStore { messages: vec![] };
         let store = Arc::new(Mutex::new(store));
@@ -619,7 +623,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_prepare_message_skip_intermediary_eos() -> Result<()> {
-        let (r, w) = get_channel()?;
+        let (r, w) = get_channel().await?;
 
         let store = MockStore { messages: vec![] };
         let store = Arc::new(Mutex::new(store));
@@ -658,7 +662,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_check_discrepant_pts() -> Result<()> {
-        let (_, w) = get_channel()?;
+        let (r, w) = get_channel().await?;
 
         let store = MockStore { messages: vec![] };
         let store = Arc::new(Mutex::new(store));
@@ -698,13 +702,15 @@ mod tests {
 
         let res = job.check_discrepant_pts(&second)?;
         assert_eq!(res, true);
-
+        drop(job);
+        let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
+        shutdown_channel(r, w)?;
         Ok(())
     }
 
     #[tokio::test]
     async fn test_check_discrepant_pts_stop_when_incorrect() -> Result<()> {
-        let (_, w) = get_channel()?;
+        let (r, w) = get_channel().await?;
 
         let store = MockStore { messages: vec![] };
         let store = Arc::new(Mutex::new(store));
@@ -735,6 +741,50 @@ mod tests {
 
         let res = job.check_discrepant_pts(&first);
         assert!(res.is_err());
+        drop(job);
+        let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
+        shutdown_channel(r, w)?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_send_either() -> Result<()> {
+        let (r, w) = get_channel().await?;
+
+        let store = MockStore { messages: vec![] };
+        let store = Arc::new(Mutex::new(store));
+
+        let job_conf = JobConfigurationBuilder::default()
+            .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
+            .stored_source_id("source_id".to_string())
+            .resulting_source_id("resulting_id".to_string())
+            .stop_on_incorrect_pts(true)
+            .build_and_validate()?;
+
+        let job = Job::new(
+            store.clone(),
+            w.clone(),
+            0,
+            0,
+            JobStopCondition::last_frame(incremental_uuid_v7().as_u128()),
+            job_conf,
+        )?;
+        job.send_either(SendEither::EOS).await?;
+        sleep(Duration::from_millis(1)).await;
+        let res = r.receive()?;
+        assert!(matches!(
+            res,
+            ReaderResult::Message {
+                message,
+                topic,
+                routing_id: _,
+                data: _
+            } if message.is_end_of_stream() && topic == b"resulting_id"
+        ));
+
+        drop(job);
+        let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
+        shutdown_channel(r, w)?;
 
         Ok(())
     }
