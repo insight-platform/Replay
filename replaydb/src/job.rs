@@ -655,4 +655,87 @@ mod tests {
         shutdown_channel(r, w)?;
         Ok(())
     }
+
+    #[tokio::test]
+    async fn test_check_discrepant_pts() -> Result<()> {
+        let (_, w) = get_channel()?;
+
+        let store = MockStore { messages: vec![] };
+        let store = Arc::new(Mutex::new(store));
+
+        let job_conf = JobConfigurationBuilder::default()
+            .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
+            .stored_source_id("source_id".to_string())
+            .resulting_source_id("resulting_id".to_string())
+            .build_and_validate()?;
+
+        let mut job = Job::new(
+            store.clone(),
+            w.clone(),
+            0,
+            0,
+            JobStopCondition::last_frame(incremental_uuid_v7().as_u128()),
+            job_conf,
+        )?;
+
+        let eos = Message::end_of_stream(EndOfStream::new("source_id".to_string()));
+        let res = job.check_discrepant_pts(&eos)?;
+        assert_eq!(res, false);
+
+        let first = gen_properly_filled_frame().to_message();
+
+        sleep(Duration::from_millis(1)).await;
+        let second = gen_properly_filled_frame().to_message();
+
+        sleep(Duration::from_millis(1)).await;
+        let third = gen_properly_filled_frame().to_message();
+
+        let res = job.check_discrepant_pts(&first)?;
+        assert_eq!(res, false);
+
+        let res = job.check_discrepant_pts(&third)?;
+        assert_eq!(res, false);
+
+        let res = job.check_discrepant_pts(&second)?;
+        assert_eq!(res, true);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_check_discrepant_pts_stop_when_incorrect() -> Result<()> {
+        let (_, w) = get_channel()?;
+
+        let store = MockStore { messages: vec![] };
+        let store = Arc::new(Mutex::new(store));
+
+        let job_conf = JobConfigurationBuilder::default()
+            .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
+            .stored_source_id("source_id".to_string())
+            .resulting_source_id("resulting_id".to_string())
+            .stop_on_incorrect_pts(true)
+            .build_and_validate()?;
+
+        let mut job = Job::new(
+            store.clone(),
+            w.clone(),
+            0,
+            0,
+            JobStopCondition::last_frame(incremental_uuid_v7().as_u128()),
+            job_conf,
+        )?;
+
+        let first = gen_properly_filled_frame().to_message();
+
+        sleep(Duration::from_millis(1)).await;
+        let second = gen_properly_filled_frame().to_message();
+
+        let res = job.check_discrepant_pts(&second)?;
+        assert_eq!(res, false);
+
+        let res = job.check_discrepant_pts(&first);
+        assert!(res.is_err());
+
+        Ok(())
+    }
 }
