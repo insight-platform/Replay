@@ -1,5 +1,6 @@
 use anyhow::{bail, Result};
 use savant_core::message::Message;
+use savant_core::primitives::frame_update::VideoFrameUpdate;
 use savant_core::transport::zeromq::{NonBlockingWriter, WriterResult};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -42,6 +43,7 @@ impl RocksDbJob {
         position: usize,
         stop_condition: JobStopCondition,
         configuration: JobConfiguration,
+        update: Option<VideoFrameUpdate>,
     ) -> Result<Self> {
         Ok(Self(Job::new(
             store,
@@ -50,6 +52,7 @@ impl RocksDbJob {
             position,
             stop_condition,
             configuration,
+            update,
         )?))
     }
 
@@ -69,6 +72,7 @@ pub(crate) struct Job<S: Store> {
     position: usize,
     configuration: JobConfiguration,
     last_pts: Option<i64>,
+    update: Option<VideoFrameUpdate>,
 }
 
 impl<S> Debug for Job<S>
@@ -81,6 +85,7 @@ where
             .field("stop_condition", &self.stop_condition)
             .field("position", &self.position)
             .field("configuration", &self.configuration)
+            .field("update", &self.update)
             .finish()
     }
 }
@@ -96,6 +101,7 @@ where
         position: usize,
         stop_condition: JobStopCondition,
         configuration: JobConfiguration,
+        update: Option<VideoFrameUpdate>,
     ) -> Result<Self> {
         if configuration.min_duration > configuration.max_duration {
             bail!("Min PTS delta is greater than max PTS delta!");
@@ -113,6 +119,7 @@ where
             stop_condition,
             configuration,
             last_pts: None,
+            update,
         })
     }
 
@@ -544,6 +551,7 @@ mod tests {
             0,
             JobStopCondition::last_frame(incremental_uuid_v7().as_u128()),
             job_conf,
+            None,
         )?;
         let m = job.read_message().await?;
         assert_eq!(m.0.is_video_frame(), true);
@@ -587,6 +595,7 @@ mod tests {
             0,
             JobStopCondition::last_frame(incremental_uuid_v7().as_u128()),
             job_conf,
+            None,
         )?;
         let now = tokio::time::Instant::now();
         let m = job.read_message().await?;
@@ -623,6 +632,7 @@ mod tests {
             0,
             JobStopCondition::last_frame(incremental_uuid_v7().as_u128()),
             job_conf,
+            None,
         )?;
 
         let m = job.prepare_message(gen_properly_filled_frame().to_message());
@@ -673,6 +683,7 @@ mod tests {
             0,
             JobStopCondition::last_frame(incremental_uuid_v7().as_u128()),
             job_conf,
+            None,
         )?;
 
         let m = job.prepare_message(gen_properly_filled_frame().to_message());
@@ -711,6 +722,7 @@ mod tests {
             0,
             JobStopCondition::last_frame(incremental_uuid_v7().as_u128()),
             job_conf,
+            None,
         )?;
 
         let eos = Message::end_of_stream(EndOfStream::new("source_id".to_string()));
@@ -760,6 +772,7 @@ mod tests {
             0,
             JobStopCondition::last_frame(incremental_uuid_v7().as_u128()),
             job_conf,
+            None,
         )?;
 
         let first = gen_properly_filled_frame().to_message();
@@ -798,6 +811,7 @@ mod tests {
             0,
             JobStopCondition::last_frame(incremental_uuid_v7().as_u128()),
             job_conf,
+            None,
         )?;
         job.send_either(SendEither::EOS).await?;
         let res = r.receive()?;
@@ -840,6 +854,7 @@ mod tests {
             0,
             JobStopCondition::last_frame(incremental_uuid_v7().as_u128()),
             job_conf,
+            None,
         )?;
         r.shutdown()?;
         let res = job.send_either(SendEither::EOS).await;
@@ -889,6 +904,7 @@ mod tests {
             0,
             JobStopCondition::last_frame(frames.last().as_ref().unwrap().get_uuid_u128()),
             job_conf,
+            None,
         )?;
         job.run_fast_until_complete().await?;
         for f in frames {
@@ -951,6 +967,7 @@ mod tests {
             0,
             JobStopCondition::last_frame(frames.last().as_ref().unwrap().get_uuid_u128()),
             job_conf,
+            None,
         )?;
         let now = tokio::time::Instant::now();
         job.run_pts_synchronized_until_complete().await?;
@@ -1051,6 +1068,7 @@ mod tests {
             0,
             JobStopCondition::last_frame(last_uuid),
             job_conf,
+            None,
         )?;
 
         let now = tokio::time::Instant::now();
@@ -1109,6 +1127,7 @@ mod tests {
             0,
             JobStopCondition::last_frame(frames.last().as_ref().unwrap().get_uuid_u128()),
             job_conf,
+            None,
         )?;
         let now = tokio::time::Instant::now();
         job.run_pts_synchronized_until_complete().await?;
@@ -1180,6 +1199,7 @@ mod tests {
             0,
             JobStopCondition::last_frame(frames.last().as_ref().unwrap().get_uuid_u128()),
             job_conf,
+            None,
         )?;
         let now = tokio::time::Instant::now();
         job.run_pts_synchronized_until_complete().await?;
