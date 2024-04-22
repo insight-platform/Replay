@@ -1,16 +1,19 @@
-use crate::store::rocksdb::RocksStore;
-use crate::store::Store;
-use anyhow::{bail, Result};
-use configuration::JobConfiguration;
-use parking_lot::Mutex;
-use savant_core::message::Message;
-use savant_core::transport::zeromq::{NonBlockingWriter, WriterResult};
-use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+use anyhow::{bail, Result};
+use parking_lot::Mutex;
+use savant_core::message::Message;
+use savant_core::transport::zeromq::{NonBlockingWriter, WriterResult};
+use serde::{Deserialize, Serialize};
+
+use configuration::JobConfiguration;
 use stop_condition::JobStopCondition;
+
+use crate::store::rocksdb::RocksStore;
+use crate::store::Store;
 
 pub mod configuration;
 pub mod stop_condition;
@@ -295,7 +298,7 @@ where
     }
 
     async fn run_pts_synchronized_until_complete(&mut self) -> Result<()> {
-        let mut last_sent = Instant::now();
+        let mut last_video_frame_sent = Instant::now();
         let (prev_message, data) = self.read_message().await?;
         if !prev_message.is_video_frame() {
             let message = format!(
@@ -308,9 +311,9 @@ where
 
         let mut prev_message = Some(prev_message);
         let mut first_run_data = Some(data);
-        let mut time_spent = Duration::from_secs(0);
         loop {
             // avoid double read for the first iteration
+            let read_spent = Instant::now();
             let (message, data) = if first_run_data.is_none() {
                 self.read_message().await?
             } else {
@@ -319,6 +322,7 @@ where
                     first_run_data.take().unwrap(),
                 )
             };
+            let read_duration = read_spent.elapsed();
 
             let message = self.prepare_message(message);
             if message.is_none() {
@@ -343,38 +347,44 @@ where
                 }
             };
 
-            if delay > self.configuration.max_duration {
-                let message = format!(
-                    "PTS discrepancy delay is greater than the configured max delay in job {}. The job will use configured delay for the next frame!",
-                    self.id
-                );
-                log::debug!(target: "replay::db::job", "{}", &message);
-                delay = self.configuration.max_duration;
+            if message.is_video_frame() {
+                if delay > self.configuration.max_duration {
+                    let message = format!(
+                        "PTS discrepancy delay is greater than the configured max delay in job {}. The job will use configured delay for the next frame!",
+                        self.id
+                    );
+                    log::debug!(target: "replay::db::job", "{}", &message);
+                    delay = self.configuration.max_duration;
+                }
+
+                if delay < self.configuration.min_duration {
+                    let message = format!(
+                        "PTS discrepancy delay is less than the configured min delay in job {}. The job will use configured delay for the next frame!",
+                        self.id
+                    );
+                    log::debug!(target: "replay::db::job", "{}", &message);
+                    delay = self.configuration.min_duration;
+                }
+
+                // dbg!(last_video_frame_sent.elapsed());
+                let delay = delay
+                    .checked_sub(last_video_frame_sent.elapsed())
+                    .unwrap_or_else(|| Duration::from_secs(0));
+
+                let delay = delay
+                    .checked_sub(read_duration)
+                    .unwrap_or_else(|| Duration::from_secs(0));
+                // dbg!(delay);
+
+                tokio::time::sleep(delay).await;
+                last_video_frame_sent = Instant::now();
             }
-
-            if delay < self.configuration.min_duration {
-                let message = format!(
-                    "PTS discrepancy delay is less than the configured min delay in job {}. The job will use configured delay for the next frame!",
-                    self.id
-                );
-                log::debug!(target: "replay::db::job", "{}", &message);
-                delay = self.configuration.min_duration;
-            }
-
-            let delay = delay
-                .checked_sub(time_spent)
-                .unwrap_or_else(|| Duration::from_secs(0));
-
-            tokio::time::sleep(delay).await;
 
             let sliced_data = data.iter().map(|d| d.as_slice()).collect::<Vec<_>>();
+
             self.send_either(SendEither::Message(&message, &sliced_data))
                 .await?;
 
-            if message.is_video_frame() {
-                time_spent = last_sent.elapsed();
-                last_sent = Instant::now();
-            }
             self.position += 1;
 
             if self.stop_condition.check(&message) {
@@ -390,10 +400,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::job::configuration::JobConfigurationBuilder;
-    use crate::job::stop_condition::JobStopCondition;
-    use crate::job::{Job, RoutingLabelsUpdateStrategy, SendEither};
-    use crate::store::{gen_properly_filled_frame, Offset, Store};
+    use std::sync::Arc;
+    use std::time::Duration;
+
     use anyhow::Result;
     use parking_lot::Mutex;
     use savant_core::message::Message;
@@ -402,10 +411,13 @@ mod tests {
         NonBlockingReader, NonBlockingWriter, ReaderConfig, ReaderResult, WriterConfig,
     };
     use savant_core::utils::uuid_v7::incremental_uuid_v7;
-    use std::sync::Arc;
-    use std::time::Duration;
     use tokio::time::sleep;
     use uuid::Uuid;
+
+    use crate::job::configuration::JobConfigurationBuilder;
+    use crate::job::stop_condition::JobStopCondition;
+    use crate::job::{Job, RoutingLabelsUpdateStrategy, SendEither};
+    use crate::store::{gen_properly_filled_frame, Offset, Store};
 
     struct MockStore {
         pub messages: Vec<(Option<(Message, Vec<u8>, Vec<Vec<u8>>)>, Duration)>,
@@ -458,7 +470,7 @@ mod tests {
             &WriterConfig::new()
                 .url(&format!("dealer+connect:ipc://{}/in", path))?
                 .build()?,
-            100,
+            500,
         )?;
         let mut reader = NonBlockingReader::new(
             &ReaderConfig::new()
@@ -466,7 +478,7 @@ mod tests {
                 .with_fix_ipc_permissions(Some(0o777))?
                 .with_receive_timeout(1000)?
                 .build()?,
-            100,
+            500,
         )?;
         reader.start()?;
         sleep(Duration::from_millis(100)).await;
@@ -820,6 +832,130 @@ mod tests {
         r.shutdown()?;
         let res = job.send_either(SendEither::EOS).await;
         assert!(res.is_err());
+
+        drop(job);
+        let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
+        shutdown_channel(r, w)?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_run_fast_until_complete() -> Result<()> {
+        let (r, w) = get_channel().await?;
+
+        let frames = vec![
+            gen_properly_filled_frame(),
+            gen_properly_filled_frame(),
+            gen_properly_filled_frame(),
+        ];
+
+        let store = MockStore {
+            messages: frames
+                .iter()
+                .map(|f| {
+                    (
+                        Some((f.to_message(), vec![], vec![])),
+                        Duration::from_millis(10),
+                    )
+                })
+                .collect(),
+        };
+        let store = Arc::new(Mutex::new(store));
+
+        let job_conf = JobConfigurationBuilder::default()
+            .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
+            .stored_source_id("source_id".to_string())
+            .resulting_source_id("resulting_id".to_string())
+            .max_idle_duration(Duration::from_millis(50))
+            .build_and_validate()?;
+
+        let mut job = Job::new(
+            store,
+            w.clone(),
+            0,
+            0,
+            JobStopCondition::last_frame(frames.last().as_ref().unwrap().get_uuid_u128()),
+            job_conf,
+        )?;
+        job.run_fast_until_complete().await?;
+        for f in frames {
+            let res = r.receive()?;
+            assert!(matches!(
+                res,
+                ReaderResult::Message {
+                    message,
+                    topic,
+                    routing_id: _,
+                    data: _
+                } if message.is_video_frame() && topic == b"resulting_id" && message.as_video_frame().unwrap().get_uuid_u128() == f.get_uuid_u128()
+            ));
+        }
+
+        drop(job);
+        let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
+        shutdown_channel(r, w)?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_run_sync_basic_until_complete() -> Result<()> {
+        let (r, w) = get_channel().await?;
+
+        let mut frames = vec![];
+
+        let n = 10;
+        for _ in 0..n {
+            let f = gen_properly_filled_frame();
+            frames.push(f);
+            sleep(Duration::from_millis(30)).await;
+        }
+
+        let store = MockStore {
+            messages: frames
+                .iter()
+                .map(|f| {
+                    (
+                        Some((f.to_message(), vec![], vec![])),
+                        Duration::from_millis(0),
+                    )
+                })
+                .collect(),
+        };
+        let store = Arc::new(Mutex::new(store));
+
+        let job_conf = JobConfigurationBuilder::default()
+            .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
+            .stored_source_id("source_id".to_string())
+            .resulting_source_id("resulting_id".to_string())
+            .max_idle_duration(Duration::from_millis(50))
+            .build_and_validate()?;
+
+        let mut job = Job::new(
+            store,
+            w.clone(),
+            0,
+            0,
+            JobStopCondition::last_frame(frames.last().as_ref().unwrap().get_uuid_u128()),
+            job_conf,
+        )?;
+        let now = tokio::time::Instant::now();
+        job.run_pts_synchronized_until_complete().await?;
+        dbg!(now.elapsed());
+        assert!(now.elapsed() > Duration::from_millis(n * 30));
+        for f in frames {
+            let res = r.receive()?;
+            assert!(matches!(
+                res,
+                ReaderResult::Message {
+                    message,
+                    topic,
+                    routing_id: _,
+                    data: _
+                } if message.is_video_frame() && topic == b"resulting_id" && message.as_video_frame().unwrap().get_uuid_u128() == f.get_uuid_u128()
+            ));
+        }
 
         drop(job);
         let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
