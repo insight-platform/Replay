@@ -427,7 +427,7 @@ where
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     use anyhow::Result;
     use savant_core::message::Message;
@@ -1236,14 +1236,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_microsleeps() -> Result<()> {
-        let now = Instant::now();
-        loop {
-            tokio_timerfd::sleep(Duration::from_millis(1)).await?;
-            if now.elapsed() > Duration::from_secs(20) {
-                break;
-            }
-        }
-        Ok(())
+    async fn concurrent_jobs() -> Result<()> {
+        todo!("Implement")
+    }
+
+    #[tokio::test]
+    async fn job_with_update() -> Result<()> {
+        todo!("Implement")
     }
 }
