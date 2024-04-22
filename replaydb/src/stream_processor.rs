@@ -7,26 +7,58 @@ use savant_core::transport::zeromq::{
     NonBlockingReader, NonBlockingWriter, ReaderResult, WriterResult,
 };
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 use tokio::time::sleep;
+
+#[derive(Debug)]
+struct StreamStats {
+    packet_counter: u64,
+    byte_counter: u64,
+}
 
 struct StreamProcessor<T: Store> {
     db: Arc<Mutex<T>>,
     input: NonBlockingReader,
     output: NonBlockingWriter,
+    stats: StreamStats,
+    last_stats: Instant,
+    stats_period: Duration,
 }
 
 impl<T> StreamProcessor<T>
 where
     T: Store,
 {
-    pub fn new(db: Arc<Mutex<T>>, input: NonBlockingReader, output: NonBlockingWriter) -> Self {
-        Self { db, input, output }
+    pub fn new(
+        db: Arc<Mutex<T>>,
+        input: NonBlockingReader,
+        output: NonBlockingWriter,
+        stats_period: Duration,
+    ) -> Self {
+        Self {
+            db,
+            input,
+            output,
+            stats: StreamStats {
+                packet_counter: 0,
+                byte_counter: 0,
+            },
+            stats_period,
+            last_stats: Instant::now(),
+        }
     }
 
     async fn receive_message(&mut self) -> Result<ReaderResult> {
         loop {
+            if Instant::now() - self.last_stats > self.stats_period {
+                log::info!(
+                    "Stats: packets: {}, bytes: {}",
+                    self.stats.packet_counter,
+                    self.stats.byte_counter
+                );
+                self.last_stats = Instant::now();
+            }
             let message = self.input.try_receive();
             if message.is_none() {
                 sleep(Duration::from_micros(100)).await;
@@ -191,8 +223,12 @@ mod tests {
         sleep(Duration::from_millis(100)).await;
 
         let db = Arc::new(Mutex::new(db));
-        let mut processor =
-            crate::stream_processor::StreamProcessor::new(db.clone(), in_reader, out_writer);
+        let mut processor = crate::stream_processor::StreamProcessor::new(
+            db.clone(),
+            in_reader,
+            out_writer,
+            Duration::from_secs(30),
+        );
 
         let f = gen_properly_filled_frame();
         let uuid = f.get_uuid_u128();
@@ -240,8 +276,9 @@ impl RocksDbStreamProcessor {
         db: Arc<Mutex<RocksStore>>,
         input: NonBlockingReader,
         output: NonBlockingWriter,
+        stats_period: Duration,
     ) -> Self {
-        Self(StreamProcessor::new(db, input, output))
+        Self(StreamProcessor::new(db, input, output, stats_period))
     }
 
     pub async fn run_once(&mut self) -> Result<()> {
