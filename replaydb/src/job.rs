@@ -139,7 +139,7 @@ where
                     return Ok((m, data));
                 }
                 None => {
-                    tokio_timerfd::sleep(Duration::from_micros(50)).await?;
+                    tokio_timerfd::sleep(Duration::from_millis(1)).await?;
                 }
             }
         }
@@ -414,7 +414,7 @@ where
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use anyhow::Result;
     use savant_core::message::Message;
@@ -1206,6 +1206,18 @@ mod tests {
         let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
         shutdown_channel(r, w)?;
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_microsleeps() -> Result<()> {
+        let now = Instant::now();
+        loop {
+            tokio_timerfd::sleep(Duration::from_millis(1)).await?;
+            if now.elapsed() > Duration::from_secs(20) {
+                break;
+            }
+        }
         Ok(())
     }
 }

@@ -61,7 +61,7 @@ where
             }
             let message = self.input.try_receive();
             if message.is_none() {
-                tokio_timerfd::sleep(Duration::from_micros(100)).await?;
+                tokio_timerfd::sleep(Duration::from_millis(1)).await?;
                 continue;
             }
             return message.unwrap();
@@ -74,7 +74,7 @@ where
             loop {
                 let send_res = res.try_get()?;
                 if send_res.is_none() {
-                    tokio_timerfd::sleep(Duration::from_micros(100)).await?;
+                    tokio_timerfd::sleep(Duration::from_micros(50)).await?;
                     continue;
                 }
                 let send_res = send_res.unwrap()?;
@@ -132,7 +132,7 @@ where
                         .await?;
                 }
                 ReaderResult::Timeout => {
-                    log::info!("Timeout receiving message, waiting for next message.");
+                    log::debug!("Timeout receiving message, waiting for next message.");
                 }
                 ReaderResult::PrefixMismatch { topic, routing_id } => {
                     log::warn!(
