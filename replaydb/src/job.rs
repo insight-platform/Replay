@@ -152,7 +152,7 @@ where
         }
     }
 
-    pub(self) fn prepare_message(&self, m: Message) -> Option<Message> {
+    pub(self) fn prepare_message(&self, m: Message) -> Result<Option<Message>> {
         let message = if m.is_end_of_stream() {
             if self.configuration.skip_intermediary_eos {
                 None
@@ -165,12 +165,18 @@ where
         } else if m.is_video_frame() {
             let mut f = m.as_video_frame().unwrap().clone();
             f.set_source_id(&self.configuration.resulting_source_id);
+            if let Some(u) = &self.update {
+                f.update(u)?;
+            }
             Some(f.to_message())
         } else {
             None
         };
 
-        message.as_ref()?;
+        if message.is_none() {
+            return Ok(None);
+        }
+
         let mut message = message.unwrap();
 
         match &self.configuration.routing_labels {
@@ -183,7 +189,7 @@ where
             }
         }
 
-        Some(message)
+        Ok(Some(message))
     }
 
     fn check_pts_decrease(&mut self, message: &Message) -> Result<bool> {
@@ -283,7 +289,7 @@ where
     async fn run_fast_until_complete(&mut self) -> Result<()> {
         loop {
             let (m, data) = self.read_message().await?;
-            let m = self.prepare_message(m);
+            let m = self.prepare_message(m)?;
             if m.is_none() {
                 continue;
             }
@@ -331,7 +337,7 @@ where
                 )
             };
 
-            let message = self.prepare_message(message);
+            let message = self.prepare_message(message)?;
             if message.is_none() {
                 continue;
             }
@@ -635,7 +641,7 @@ mod tests {
             None,
         )?;
 
-        let m = job.prepare_message(gen_properly_filled_frame().to_message());
+        let m = job.prepare_message(gen_properly_filled_frame().to_message())?;
         assert!(m.is_some());
         let m = m.unwrap();
         assert_eq!(
@@ -646,7 +652,7 @@ mod tests {
         assert_eq!(m.get_source_id(), "resulting_id".to_string());
         let m = job.prepare_message(Message::end_of_stream(EndOfStream::new(
             "source_id".to_string(),
-        )));
+        )))?;
         assert!(m.is_some());
         let m = m.unwrap();
         assert_eq!(
@@ -686,14 +692,14 @@ mod tests {
             None,
         )?;
 
-        let m = job.prepare_message(gen_properly_filled_frame().to_message());
+        let m = job.prepare_message(gen_properly_filled_frame().to_message())?;
         assert!(m.is_some());
         let m = m.unwrap().as_video_frame().unwrap();
         assert_eq!(m.get_source_id(), "resulting_id".to_string());
 
         let m = job.prepare_message(Message::end_of_stream(EndOfStream::new(
             "source_id".to_string(),
-        )));
+        )))?;
         assert!(m.is_none());
 
         drop(job);
