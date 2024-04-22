@@ -1,27 +1,73 @@
 use crate::store::rocksdb::RocksStore;
 use crate::store::Store;
-use crate::{topic_to_string, ZmqReader, ZmqWriter};
+use crate::topic_to_string;
 use anyhow::{bail, Result};
 use parking_lot::Mutex;
-use savant_core::transport::zeromq::ReaderResult;
+use savant_core::message::Message;
+use savant_core::transport::zeromq::{
+    NonBlockingReader, NonBlockingWriter, ReaderResult, WriterResult,
+};
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::time::sleep;
 
 struct StreamProcessor<T: Store> {
     db: Arc<Mutex<T>>,
-    input: ZmqReader,
-    output: ZmqWriter,
+    input: NonBlockingReader,
+    output: NonBlockingWriter,
 }
 
 impl<T> StreamProcessor<T>
 where
     T: Store,
 {
-    pub fn new(db: Arc<Mutex<T>>, input: ZmqReader, output: ZmqWriter) -> Self {
+    pub fn new(db: Arc<Mutex<T>>, input: NonBlockingReader, output: NonBlockingWriter) -> Self {
         Self { db, input, output }
     }
 
+    async fn receive_message(&mut self) -> Result<ReaderResult> {
+        loop {
+            let message = self.input.try_receive();
+            if message.is_none() {
+                sleep(Duration::from_micros(100)).await;
+                continue;
+            }
+            return message.unwrap();
+        }
+    }
+
+    async fn send_message(&mut self, topic: &str, message: &Message, data: &[&[u8]]) -> Result<()> {
+        loop {
+            let res = self.output.send_message(topic, message, data)?;
+            loop {
+                let send_res = res.try_get()?;
+                if send_res.is_none() {
+                    sleep(Duration::from_micros(100)).await;
+                    continue;
+                }
+                let send_res = send_res.unwrap()?;
+                match send_res {
+                    WriterResult::SendTimeout => {
+                        log::warn!("Send timeout, retrying.");
+                        break;
+                    }
+                    WriterResult::AckTimeout(_) => {
+                        log::warn!("Ack timeout, retrying.");
+                        break;
+                    }
+                    WriterResult::Ack { .. } => {
+                        return Ok(());
+                    }
+                    WriterResult::Success { .. } => {
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    }
+
     pub async fn run_once(&mut self) -> Result<()> {
-        let message = self.input.receive();
+        let message = self.receive_message().await;
         match message {
             Ok(m) => match m {
                 ReaderResult::Blacklisted(topic) => {
@@ -46,11 +92,8 @@ where
                         self.db.lock().add_message(&message, &topic, &data).await?;
                     }
                     let data_slice = data.iter().map(|v| v.as_slice()).collect::<Vec<&[u8]>>();
-                    self.output.send_message(
-                        std::str::from_utf8(&topic)?,
-                        &message,
-                        &data_slice,
-                    )?;
+                    self.send_message(std::str::from_utf8(&topic)?, &message, &data_slice)
+                        .await?;
                 }
                 ReaderResult::Timeout => {
                     log::info!("Timeout receiving message, waiting for next message.");
@@ -90,12 +133,14 @@ where
 #[cfg(test)]
 mod tests {
     use crate::store::{gen_properly_filled_frame, Store};
-    use crate::{ZmqReader, ZmqWriter};
     use anyhow::Result;
     use parking_lot::Mutex;
-    use savant_core::transport::zeromq::{ReaderConfig, ReaderResult, WriterConfig};
+    use savant_core::transport::zeromq::{
+        NonBlockingReader, NonBlockingWriter, ReaderConfig, ReaderResult, WriterConfig,
+    };
     use std::sync::Arc;
     use std::time::Duration;
+    use tokio::time::sleep;
 
     #[tokio::test]
     async fn test_stream_processor() -> Result<()> {
@@ -103,31 +148,44 @@ mod tests {
         let path = dir.path().to_str().unwrap();
         let db = crate::store::rocksdb::RocksStore::new(path, Duration::from_secs(60)).unwrap();
 
-        let in_reader = ZmqReader::new(
+        let mut in_reader = NonBlockingReader::new(
             &ReaderConfig::new()
                 .url(&format!("router+bind:ipc://{}/in", path))?
                 .with_fix_ipc_permissions(Some(0o777))?
                 .build()?,
+            100,
         )?;
+        in_reader.start()?;
+        sleep(Duration::from_millis(100)).await;
 
-        let mut in_writer = ZmqWriter::new(
+        let mut in_writer = NonBlockingWriter::new(
             &WriterConfig::new()
                 .url(&format!("dealer+connect:ipc://{}/in", path))?
                 .build()?,
+            100,
         )?;
+        in_writer.start()?;
+        sleep(Duration::from_millis(100)).await;
 
-        let mut out_reader = ZmqReader::new(
+        let mut out_reader = NonBlockingReader::new(
             &ReaderConfig::new()
                 .url(&format!("router+bind:ipc://{}/out", path))?
                 .with_fix_ipc_permissions(Some(0o777))?
                 .build()?,
+            100,
         )?;
+        out_reader.start()?;
+        sleep(Duration::from_millis(100)).await;
 
-        let out_writer = ZmqWriter::new(
+        let mut out_writer = NonBlockingWriter::new(
             &WriterConfig::new()
                 .url(&format!("dealer+connect:ipc://{}/out", path))?
                 .build()?,
+            100,
         )?;
+        out_writer.start()?;
+        sleep(Duration::from_millis(100)).await;
+
         let db = Arc::new(Mutex::new(db));
         let mut processor =
             crate::stream_processor::StreamProcessor::new(db.clone(), in_reader, out_writer);
@@ -167,7 +225,6 @@ mod tests {
                 panic!("Too short");
             }
         }
-        std::fs::remove_dir_all(path).unwrap_or_default();
         Ok(())
     }
 }
@@ -175,7 +232,11 @@ mod tests {
 pub struct RocksDbStreamProcessor(StreamProcessor<RocksStore>);
 
 impl RocksDbStreamProcessor {
-    pub fn new(db: Arc<Mutex<RocksStore>>, input: ZmqReader, output: ZmqWriter) -> Self {
+    pub fn new(
+        db: Arc<Mutex<RocksStore>>,
+        input: NonBlockingReader,
+        output: NonBlockingWriter,
+    ) -> Self {
         Self(StreamProcessor::new(db, input, output))
     }
 
