@@ -8,6 +8,6 @@ pub mod stream_processor;
 
 pub fn topic_to_string(topic: &[u8]) -> String {
     from_utf8(topic)
-        .map(|s| String::from(s))
+        .map(String::from)
         .unwrap_or(bytes_to_hex_string(topic))
 }

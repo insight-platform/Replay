@@ -1,13 +1,12 @@
+use anyhow::{bail, Result};
+use savant_core::message::Message;
+use savant_core::transport::zeromq::{NonBlockingWriter, WriterResult};
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-
-use anyhow::{bail, Result};
-use parking_lot::Mutex;
-use savant_core::message::Message;
-use savant_core::transport::zeromq::{NonBlockingWriter, WriterResult};
-use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
 
 use configuration::JobConfiguration;
 use stop_condition::JobStopCondition;
@@ -123,6 +122,7 @@ where
             let message = self
                 .store
                 .lock()
+                .await
                 .get_message(&self.configuration.stored_source_id, self.position)
                 .await?;
             if now.elapsed() > self.configuration.max_idle_duration {
@@ -151,7 +151,8 @@ where
                 None
             } else {
                 let mut eos = m.as_end_of_stream().unwrap().clone();
-                eos.source_id = self.configuration.resulting_source_id.clone();
+                eos.source_id
+                    .clone_from(&self.configuration.resulting_source_id);
                 Some(Message::end_of_stream(eos))
             }
         } else if m.is_video_frame() {
@@ -162,15 +163,13 @@ where
             None
         };
 
-        if message.is_none() {
-            return None;
-        }
+        message.as_ref()?;
         let mut message = message.unwrap();
 
         match &self.configuration.routing_labels {
             RoutingLabelsUpdateStrategy::Bypass => {}
             RoutingLabelsUpdateStrategy::Replace(labels) => {
-                message.meta_mut().routing_labels = labels.clone();
+                message.meta_mut().routing_labels.clone_from(labels);
             }
             RoutingLabelsUpdateStrategy::Append(labels) => {
                 message.meta_mut().routing_labels.extend(labels.clone());
@@ -311,9 +310,11 @@ where
 
         let mut prev_message = Some(prev_message);
         let mut first_run_data = Some(data);
+        let mut loop_time = Instant::now();
+        let mut last_skew = Duration::from_secs(0);
         loop {
-            // avoid double read for the first iteration
-            let read_spent = Instant::now();
+            log::debug!(target: "replay::db::job", "Loop time: {:?}", loop_time.elapsed());
+            loop_time = Instant::now();
             let (message, data) = if first_run_data.is_none() {
                 self.read_message().await?
             } else {
@@ -322,7 +323,6 @@ where
                     first_run_data.take().unwrap(),
                 )
             };
-            let read_duration = read_spent.elapsed();
 
             let message = self.prepare_message(message);
             if message.is_none() {
@@ -366,17 +366,22 @@ where
                     delay = self.configuration.min_duration;
                 }
 
-                // dbg!(last_video_frame_sent.elapsed());
-                let delay = delay
+                let corrected_delay = delay
                     .checked_sub(last_video_frame_sent.elapsed())
                     .unwrap_or_else(|| Duration::from_secs(0));
 
-                let delay = delay
-                    .checked_sub(read_duration)
+                let corrected_delay = corrected_delay
+                    .checked_sub(last_skew)
                     .unwrap_or_else(|| Duration::from_secs(0));
-                // dbg!(delay);
 
-                tokio::time::sleep(delay).await;
+                log::debug!(target: "replay::db::job", "Corrected delay: {:?}", corrected_delay);
+                let skew = Instant::now();
+                tokio_timerfd::sleep(corrected_delay).await?;
+                last_skew = skew
+                    .elapsed()
+                    .checked_sub(corrected_delay)
+                    .unwrap_or_else(|| Duration::from_secs(0));
+                log::debug!(target: "replay::db::job", "Last timer skew: {:?}", last_skew);
                 last_video_frame_sent = Instant::now();
             }
 
@@ -404,13 +409,13 @@ mod tests {
     use std::time::Duration;
 
     use anyhow::Result;
-    use parking_lot::Mutex;
     use savant_core::message::Message;
     use savant_core::primitives::eos::EndOfStream;
     use savant_core::transport::zeromq::{
         NonBlockingReader, NonBlockingWriter, ReaderConfig, ReaderResult, WriterConfig,
     };
     use savant_core::utils::uuid_v7::incremental_uuid_v7;
+    use tokio::sync::Mutex;
     use tokio::time::sleep;
     use uuid::Uuid;
 
@@ -905,7 +910,7 @@ mod tests {
 
         let mut frames = vec![];
 
-        let n = 10;
+        let n = 20;
         for _ in 0..n {
             let f = gen_properly_filled_frame();
             frames.push(f);
@@ -942,8 +947,10 @@ mod tests {
         )?;
         let now = tokio::time::Instant::now();
         job.run_pts_synchronized_until_complete().await?;
-        dbg!(now.elapsed());
-        assert!(now.elapsed() > Duration::from_millis(n * 30));
+        assert!(
+            now.elapsed() > Duration::from_millis(n * 33)
+                && now.elapsed() < Duration::from_millis((n + 1) * 33)
+        );
         for f in frames {
             let res = r.receive()?;
             assert!(matches!(

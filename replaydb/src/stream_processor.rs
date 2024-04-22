@@ -2,13 +2,13 @@ use crate::store::rocksdb::RocksStore;
 use crate::store::Store;
 use crate::topic_to_string;
 use anyhow::{bail, Result};
-use parking_lot::Mutex;
 use savant_core::message::Message;
 use savant_core::transport::zeromq::{
     NonBlockingReader, NonBlockingWriter, ReaderResult, WriterResult,
 };
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Mutex;
 use tokio::time::sleep;
 
 struct StreamProcessor<T: Store> {
@@ -89,7 +89,11 @@ where
                         || message.is_user_data()
                         || message.is_end_of_stream()
                     {
-                        self.db.lock().add_message(&message, &topic, &data).await?;
+                        self.db
+                            .lock()
+                            .await
+                            .add_message(&message, &topic, &data)
+                            .await?;
                     }
                     let data_slice = data.iter().map(|v| v.as_slice()).collect::<Vec<&[u8]>>();
                     self.send_message(std::str::from_utf8(&topic)?, &message, &data_slice)
@@ -134,12 +138,12 @@ where
 mod tests {
     use crate::store::{gen_properly_filled_frame, Store};
     use anyhow::Result;
-    use parking_lot::Mutex;
     use savant_core::transport::zeromq::{
         NonBlockingReader, NonBlockingWriter, ReaderConfig, ReaderResult, WriterConfig,
     };
     use std::sync::Arc;
     use std::time::Duration;
+    use tokio::sync::Mutex;
     use tokio::time::sleep;
 
     #[tokio::test]
@@ -196,7 +200,7 @@ mod tests {
         in_writer.send_message("test", &m1, &[&[0x01]])?;
         processor.run_once().await?;
         let res = out_reader.receive()?;
-        let (m2, _, _) = db.lock().get_message("test", 0).await?.unwrap();
+        let (m2, _, _) = db.lock().await.get_message("test", 0).await?.unwrap();
         assert_eq!(uuid, m2.as_video_frame().unwrap().get_uuid_u128());
         match res {
             ReaderResult::Blacklisted(topic) => {
