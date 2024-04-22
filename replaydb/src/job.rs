@@ -308,7 +308,7 @@ where
             bail!("{}", message);
         }
 
-        let mut prev_message = Some(prev_message);
+        let mut prev_frame_message = Some(prev_message);
         let mut first_run_data = Some(data);
         let mut loop_time = Instant::now();
         let mut last_skew = Duration::from_secs(0);
@@ -319,7 +319,7 @@ where
                 self.read_message().await?
             } else {
                 (
-                    prev_message.as_ref().unwrap().clone(),
+                    prev_frame_message.as_ref().unwrap().clone(),
                     first_run_data.take().unwrap(),
                 )
             };
@@ -335,7 +335,11 @@ where
                 Duration::from_secs(0)
             } else {
                 let videoframe = message.as_video_frame().unwrap();
-                let prev_video_frame = prev_message.as_ref().unwrap().as_video_frame().unwrap();
+                let prev_video_frame = prev_frame_message
+                    .as_ref()
+                    .unwrap()
+                    .as_video_frame()
+                    .unwrap();
                 if self.check_pts_decrease(&message)? {
                     self.configuration.pts_discrepancy_fix_duration
                 } else {
@@ -397,7 +401,9 @@ where
                 break;
             }
 
-            prev_message = Some(message);
+            if message.is_video_frame() {
+                prev_frame_message = Some(message);
+            }
         }
         Ok(())
     }
@@ -963,6 +969,95 @@ mod tests {
                 } if message.is_video_frame() && topic == b"resulting_id" && message.as_video_frame().unwrap().get_uuid_u128() == f.get_uuid_u128()
             ));
         }
+
+        drop(job);
+        let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
+        shutdown_channel(r, w)?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_run_sync_basic_until_complete_with_eos() -> Result<()> {
+        let (r, w) = get_channel().await?;
+
+        let last_uuid: u128;
+        let store = MockStore {
+            messages: vec![
+                (
+                    Some((gen_properly_filled_frame().to_message(), vec![], vec![])),
+                    Duration::from_millis(0),
+                ),
+                (
+                    Some((
+                        Message::end_of_stream(EndOfStream::new("source_id".to_string())),
+                        vec![],
+                        vec![],
+                    )),
+                    Duration::from_millis(0),
+                ),
+                (
+                    Some((gen_properly_filled_frame().to_message(), vec![], vec![])),
+                    Duration::from_millis(0),
+                ),
+                (
+                    Some((
+                        Message::end_of_stream(EndOfStream::new("source_id".to_string())),
+                        vec![],
+                        vec![],
+                    )),
+                    Duration::from_millis(0),
+                ),
+                (
+                    Some((
+                        {
+                            let f = gen_properly_filled_frame();
+                            last_uuid = f.get_uuid_u128();
+                            f
+                        }
+                        .to_message(),
+                        vec![],
+                        vec![],
+                    )),
+                    Duration::from_millis(0),
+                ),
+            ],
+        };
+        let message_count = store
+            .messages
+            .iter()
+            .filter(|(m, _)| {
+                m.as_ref()
+                    .map(|(m, _, _)| m.is_video_frame())
+                    .unwrap_or(false)
+            })
+            .count() as u64;
+
+        let store = Arc::new(Mutex::new(store));
+
+        let job_conf = JobConfigurationBuilder::default()
+            .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
+            .stored_source_id("source_id".to_string())
+            .resulting_source_id("resulting_id".to_string())
+            .max_idle_duration(Duration::from_millis(50))
+            .skip_intermediary_eos(false)
+            .build_and_validate()?;
+
+        let mut job = Job::new(
+            store,
+            w.clone(),
+            0,
+            0,
+            JobStopCondition::last_frame(last_uuid),
+            job_conf,
+        )?;
+
+        let now = tokio::time::Instant::now();
+        job.run_pts_synchronized_until_complete().await?;
+        assert!(
+            now.elapsed() > Duration::from_millis(message_count * 33)
+                && now.elapsed() < Duration::from_millis((message_count + 1) * 33)
+        );
 
         drop(job);
         let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
