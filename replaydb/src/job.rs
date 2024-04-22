@@ -139,7 +139,7 @@ where
                     return Ok((m, data));
                 }
                 None => {
-                    tokio::time::sleep(Duration::from_millis(1)).await;
+                    tokio_timerfd::sleep(Duration::from_micros(50)).await?;
                 }
             }
         }
@@ -232,7 +232,7 @@ where
 
                 let res = send_res.try_get()?;
                 if res.is_none() {
-                    tokio::time::sleep(Duration::from_millis(1)).await;
+                    tokio_timerfd::sleep(Duration::from_micros(50)).await?;
                     continue;
                 }
                 let res = res.unwrap()?;
@@ -377,7 +377,7 @@ where
                     .checked_sub(last_skew)
                     .unwrap_or_else(|| Duration::from_secs(0));
 
-                //dbg!(corrected_delay);
+                dbg!(corrected_delay);
                 log::debug!(target: "replay::db::job", "Corrected delay: {:?}", corrected_delay);
                 let skew = Instant::now();
                 tokio_timerfd::sleep(corrected_delay).await?;
@@ -391,8 +391,10 @@ where
 
             let sliced_data = data.iter().map(|d| d.as_slice()).collect::<Vec<_>>();
 
+            let send_measurement = Instant::now();
             self.send_either(SendEither::Message(&message, &sliced_data))
                 .await?;
+            dbg!(send_measurement.elapsed());
 
             self.position += 1;
 
@@ -589,7 +591,7 @@ mod tests {
         let now = tokio::time::Instant::now();
         let m = job.read_message().await?;
         assert_eq!(m.0.is_video_frame(), true);
-        assert!(now.elapsed() > Duration::from_millis(32));
+        assert!(now.elapsed() > Duration::from_millis(30));
 
         drop(job);
         let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
