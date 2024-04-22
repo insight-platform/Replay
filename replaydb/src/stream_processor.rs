@@ -9,7 +9,6 @@ use savant_core::transport::zeromq::{
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
-use tokio::time::sleep;
 
 #[derive(Debug)]
 struct StreamStats {
@@ -53,6 +52,7 @@ where
         loop {
             if Instant::now() - self.last_stats > self.stats_period {
                 log::info!(
+                    target: "replay::db::stream_processor::receive_message",
                     "Stats: packets: {}, bytes: {}",
                     self.stats.packet_counter,
                     self.stats.byte_counter
@@ -61,7 +61,7 @@ where
             }
             let message = self.input.try_receive();
             if message.is_none() {
-                sleep(Duration::from_micros(100)).await;
+                tokio_timerfd::sleep(Duration::from_micros(100)).await?;
                 continue;
             }
             return message.unwrap();
@@ -74,7 +74,7 @@ where
             loop {
                 let send_res = res.try_get()?;
                 if send_res.is_none() {
-                    sleep(Duration::from_micros(100)).await;
+                    tokio_timerfd::sleep(Duration::from_micros(100)).await?;
                     continue;
                 }
                 let send_res = send_res.unwrap()?;
@@ -176,7 +176,6 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
     use tokio::sync::Mutex;
-    use tokio::time::sleep;
 
     #[tokio::test]
     async fn test_stream_processor() -> Result<()> {
@@ -192,7 +191,7 @@ mod tests {
             100,
         )?;
         in_reader.start()?;
-        sleep(Duration::from_millis(100)).await;
+        tokio_timerfd::sleep(Duration::from_millis(100)).await?;
 
         let mut in_writer = NonBlockingWriter::new(
             &WriterConfig::new()
@@ -201,7 +200,7 @@ mod tests {
             100,
         )?;
         in_writer.start()?;
-        sleep(Duration::from_millis(100)).await;
+        tokio_timerfd::sleep(Duration::from_millis(100)).await?;
 
         let mut out_reader = NonBlockingReader::new(
             &ReaderConfig::new()
@@ -211,7 +210,7 @@ mod tests {
             100,
         )?;
         out_reader.start()?;
-        sleep(Duration::from_millis(100)).await;
+        tokio_timerfd::sleep(Duration::from_millis(100)).await?;
 
         let mut out_writer = NonBlockingWriter::new(
             &WriterConfig::new()
@@ -220,7 +219,7 @@ mod tests {
             100,
         )?;
         out_writer.start()?;
-        sleep(Duration::from_millis(100)).await;
+        tokio_timerfd::sleep(Duration::from_millis(100)).await?;
 
         let db = Arc::new(Mutex::new(db));
         let mut processor = crate::stream_processor::StreamProcessor::new(

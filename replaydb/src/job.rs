@@ -422,7 +422,6 @@ mod tests {
     };
     use savant_core::utils::uuid_v7::incremental_uuid_v7;
     use tokio::sync::Mutex;
-    use tokio::time::sleep;
     use uuid::Uuid;
 
     use crate::job::configuration::JobConfigurationBuilder;
@@ -450,7 +449,7 @@ mod tests {
             _id: usize,
         ) -> Result<Option<(Message, Vec<u8>, Vec<Vec<u8>>)>> {
             let (m, d) = self.messages.remove(0);
-            sleep(d).await;
+            tokio_timerfd::sleep(d).await?;
             Ok(m)
         }
 
@@ -492,9 +491,9 @@ mod tests {
             500,
         )?;
         reader.start()?;
-        sleep(Duration::from_millis(100)).await;
+        tokio_timerfd::sleep(Duration::from_millis(100)).await?;
         writer.start()?;
-        sleep(Duration::from_millis(100)).await;
+        tokio_timerfd::sleep(Duration::from_millis(100)).await?;
 
         Ok((reader, Arc::new(writer)))
     }
@@ -718,10 +717,10 @@ mod tests {
 
         let first = gen_properly_filled_frame().to_message();
 
-        sleep(Duration::from_millis(1)).await;
+        tokio_timerfd::sleep(Duration::from_millis(1)).await?;
         let second = gen_properly_filled_frame().to_message();
 
-        sleep(Duration::from_millis(1)).await;
+        tokio_timerfd::sleep(Duration::from_millis(1)).await?;
         let third = gen_properly_filled_frame().to_message();
 
         let res = job.check_pts_decrease(&first)?;
@@ -763,7 +762,7 @@ mod tests {
 
         let first = gen_properly_filled_frame().to_message();
 
-        sleep(Duration::from_millis(1)).await;
+        tokio_timerfd::sleep(Duration::from_millis(1)).await?;
         let second = gen_properly_filled_frame().to_message();
 
         let res = job.check_pts_decrease(&second)?;
@@ -920,7 +919,7 @@ mod tests {
         for _ in 0..n {
             let f = gen_properly_filled_frame();
             frames.push(f);
-            sleep(Duration::from_millis(30)).await;
+            tokio_timerfd::sleep(Duration::from_millis(30)).await?;
         }
 
         let store = MockStore {
