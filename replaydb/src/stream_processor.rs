@@ -23,6 +23,7 @@ struct StreamProcessor<T: Store> {
     stats: StreamStats,
     last_stats: Instant,
     stats_period: Duration,
+    send_metadata_only: bool,
 }
 
 impl<T> StreamProcessor<T>
@@ -34,6 +35,7 @@ where
         input: NonBlockingReader,
         output: NonBlockingWriter,
         stats_period: Duration,
+        send_metadata_only: bool,
     ) -> Self {
         Self {
             db,
@@ -45,6 +47,7 @@ where
             },
             stats_period,
             last_stats: Instant::now(),
+            send_metadata_only,
         }
     }
 
@@ -127,7 +130,12 @@ where
                             .add_message(&message, &topic, &data)
                             .await?;
                     }
-                    let data_slice = data.iter().map(|v| v.as_slice()).collect::<Vec<&[u8]>>();
+                    let data_slice = if self.send_metadata_only {
+                        vec![]
+                    } else {
+                        data.iter().map(|v| v.as_slice()).collect::<Vec<&[u8]>>()
+                    };
+
                     self.send_message(std::str::from_utf8(&topic)?, &message, &data_slice)
                         .await?;
                 }
@@ -227,6 +235,7 @@ mod tests {
             in_reader,
             out_writer,
             Duration::from_secs(30),
+            false,
         );
 
         let f = gen_properly_filled_frame();
@@ -276,8 +285,15 @@ impl RocksDbStreamProcessor {
         input: NonBlockingReader,
         output: NonBlockingWriter,
         stats_period: Duration,
+        send_metadata_only: bool,
     ) -> Self {
-        Self(StreamProcessor::new(db, input, output, stats_period))
+        Self(StreamProcessor::new(
+            db,
+            input,
+            output,
+            stats_period,
+            send_metadata_only,
+        ))
     }
 
     pub async fn run_once(&mut self) -> Result<()> {

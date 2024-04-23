@@ -19,6 +19,7 @@ pub struct JobConfiguration {
     pub(crate) routing_labels: RoutingLabelsUpdateStrategy,
     pub(crate) max_idle_duration: Duration,
     pub(crate) max_delivery_duration: Duration,
+    pub(crate) send_metadata_only: bool,
 }
 
 impl Default for JobConfiguration {
@@ -36,6 +37,7 @@ impl Default for JobConfiguration {
             routing_labels: RoutingLabelsUpdateStrategy::Bypass,
             max_idle_duration: Duration::from_secs(10),
             max_delivery_duration: Duration::from_secs(10),
+            send_metadata_only: false,
         }
     }
 }

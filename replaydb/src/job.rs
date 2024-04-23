@@ -228,7 +228,11 @@ where
                 SendEither::Message(m, data) => self.writer.lock().await.send_message(
                     &self.configuration.resulting_source_id,
                     m,
-                    data,
+                    if self.configuration.send_metadata_only {
+                        &[]
+                    } else {
+                        data
+                    },
                 )?,
                 SendEither::EOS => self
                     .writer
