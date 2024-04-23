@@ -347,6 +347,7 @@ mod tests {
     use super::*;
     use crate::store::{gen_properly_filled_frame, Store};
     use savant_core::test::gen_frame;
+    use tokio_timerfd::sleep;
 
     #[tokio::test]
     async fn test_rocksdb_init() -> Result<()> {
@@ -438,10 +439,10 @@ mod tests {
         let f = gen_properly_filled_frame();
         let source_id = f.get_source_id();
         db.add_message(&f.to_message(), &[], &[]).await.unwrap();
-        std::thread::sleep(Duration::from_millis(10));
+        sleep(Duration::from_millis(10)).await?;
         let f = gen_properly_filled_frame();
         db.add_message(&f.to_message(), &[], &[]).await.unwrap();
-        std::thread::sleep(Duration::from_millis(10));
+        sleep(Duration::from_millis(10)).await?;
         let f = gen_properly_filled_frame();
         let uuid_f3 = f.get_uuid();
         db.add_message(&f.to_message(), &[], &[]).await.unwrap();

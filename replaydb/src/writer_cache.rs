@@ -33,7 +33,7 @@ impl WriterCache {
 
     pub fn get(&mut self, configuration: &WriterConfiguration) -> Result<Arc<Mutex<JobWriter>>> {
         if let Some(w) = self.cache.get(configuration) {
-            return Ok(w.clone());
+            Ok(w.clone())
         } else {
             let writer = Arc::new(Mutex::new(
                 NonBlockingWriter::try_from(configuration)?.into(),

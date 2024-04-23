@@ -43,6 +43,7 @@ impl Default for WriterConfiguration {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 impl WriterConfiguration {
     pub fn new(
         url: String,
