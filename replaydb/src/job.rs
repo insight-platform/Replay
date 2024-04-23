@@ -94,6 +94,10 @@ impl<S> Job<S>
 where
     S: Store,
 {
+    pub fn json(&self) -> Result<String> {
+        serde_json::to_string(self).map_err(Into::into)
+    }
+
     pub fn new(
         store: Arc<Mutex<S>>,
         writer: Arc<Mutex<NonBlockingWriter>>,
@@ -1324,6 +1328,41 @@ mod tests {
             ));
         }
 
+        drop(job);
+        let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
+        shutdown_channel(r, w).await?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_json() -> Result<()> {
+        let (r, w) = get_channel().await?;
+
+        let store = MockStore { messages: vec![] };
+        let store = Arc::new(Mutex::new(store));
+
+        let job_conf = JobConfigurationBuilder::default()
+            .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
+            .stored_source_id("source_id".to_string())
+            .resulting_source_id("resulting_id".to_string())
+            .max_idle_duration(Duration::from_millis(50))
+            .build_and_validate()?;
+
+        let mut u = VideoFrameUpdate::default();
+        u.add_frame_attribute(Attribute::persistent("new", "value", vec![], &None, false));
+        u.set_frame_attribute_policy(AttributeUpdatePolicy::Error);
+
+        let job = Job::new(
+            store.clone(),
+            w.clone(),
+            incremental_uuid_v7().as_u128(),
+            0,
+            JobStopCondition::last_frame(incremental_uuid_v7().as_u128()),
+            job_conf,
+            Some(u),
+        )?;
+        let json = job.json()?;
         drop(job);
         let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
         shutdown_channel(r, w).await?;
