@@ -38,7 +38,7 @@ pub struct RocksDbJob(Job<RocksStore>);
 impl RocksDbJob {
     pub fn new(
         store: Arc<Mutex<RocksStore>>,
-        writer: Arc<NonBlockingWriter>,
+        writer: Arc<Mutex<NonBlockingWriter>>,
         id: u128,
         position: usize,
         stop_condition: JobStopCondition,
@@ -66,7 +66,7 @@ pub(crate) struct Job<S: Store> {
     #[serde(skip)]
     store: Arc<Mutex<S>>,
     #[serde(skip)]
-    writer: Arc<NonBlockingWriter>,
+    writer: Arc<Mutex<NonBlockingWriter>>,
     id: u128,
     stop_condition: JobStopCondition,
     position: usize,
@@ -96,7 +96,7 @@ where
 {
     pub fn new(
         store: Arc<Mutex<S>>,
-        writer: Arc<NonBlockingWriter>,
+        writer: Arc<Mutex<NonBlockingWriter>>,
         id: u128,
         position: usize,
         stop_condition: JobStopCondition,
@@ -225,12 +225,15 @@ where
         let now = Instant::now();
         loop {
             let send_res = match one_of {
-                SendEither::Message(m, data) => {
-                    self.writer
-                        .send_message(&self.configuration.resulting_source_id, m, data)?
-                }
+                SendEither::Message(m, data) => self.writer.lock().await.send_message(
+                    &self.configuration.resulting_source_id,
+                    m,
+                    data,
+                )?,
                 SendEither::EOS => self
                     .writer
+                    .lock()
+                    .await
                     .send_eos(&self.configuration.resulting_source_id)?,
             };
             loop {
@@ -390,7 +393,7 @@ where
                     .checked_sub(last_skew)
                     .unwrap_or_else(|| Duration::from_secs(0));
 
-                dbg!(corrected_delay);
+                //dbg!(corrected_delay);
                 log::debug!(target: "replay::db::job", "Corrected delay: {:?}", corrected_delay);
                 let skew = Instant::now();
                 tokio_timerfd::sleep(corrected_delay).await?;
@@ -404,10 +407,10 @@ where
 
             let sliced_data = data.iter().map(|d| d.as_slice()).collect::<Vec<_>>();
 
-            let send_measurement = Instant::now();
+            //let send_measurement = Instant::now();
             self.send_either(SendEither::Message(&message, &sliced_data))
                 .await?;
-            dbg!(send_measurement.elapsed());
+            //dbg!(send_measurement.elapsed());
 
             self.position += 1;
 
@@ -432,11 +435,14 @@ mod tests {
     use anyhow::Result;
     use savant_core::message::Message;
     use savant_core::primitives::eos::EndOfStream;
+    use savant_core::primitives::frame_update::{AttributeUpdatePolicy, VideoFrameUpdate};
+    use savant_core::primitives::{Attribute, WithAttributes};
     use savant_core::transport::zeromq::{
         NonBlockingReader, NonBlockingWriter, ReaderConfig, ReaderResult, WriterConfig,
     };
     use savant_core::utils::uuid_v7::incremental_uuid_v7;
     use tokio::sync::Mutex;
+    use tokio_timerfd::sleep;
     use uuid::Uuid;
 
     use crate::job::configuration::JobConfigurationBuilder;
@@ -465,6 +471,7 @@ mod tests {
         ) -> Result<Option<(Message, Vec<u8>, Vec<Vec<u8>>)>> {
             let (m, d) = self.messages.remove(0);
             tokio_timerfd::sleep(d).await?;
+            //dbg!("get_message", self.messages.len(), systime_ms());
             Ok(m)
         }
 
@@ -488,7 +495,7 @@ mod tests {
         Ok(())
     }
 
-    async fn get_channel() -> Result<(NonBlockingReader, Arc<NonBlockingWriter>)> {
+    async fn get_channel() -> Result<(NonBlockingReader, Arc<Mutex<NonBlockingWriter>>)> {
         let dir = tempfile::TempDir::new()?;
         let path = dir.path().to_str().unwrap();
         let mut writer = NonBlockingWriter::new(
@@ -510,16 +517,17 @@ mod tests {
         writer.start()?;
         tokio_timerfd::sleep(Duration::from_millis(100)).await?;
 
-        Ok((reader, Arc::new(writer)))
+        Ok((reader, Arc::new(Mutex::new(writer))))
     }
 
-    fn shutdown_channel(mut r: NonBlockingReader, mut w: NonBlockingWriter) -> Result<()> {
+    async fn shutdown_channel(mut r: NonBlockingReader, w: Mutex<NonBlockingWriter>) -> Result<()> {
         if !r.is_shutdown() {
             r.shutdown()?;
         }
 
-        if !w.is_shutdown() {
-            w.shutdown()?;
+        let mut m = w.lock().await;
+        if !m.is_shutdown() {
+            m.shutdown()?;
         }
 
         Ok(())
@@ -566,7 +574,7 @@ mod tests {
 
         drop(job);
         let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
-        shutdown_channel(r, w)?;
+        shutdown_channel(r, w).await?;
         Ok(())
     }
 
@@ -610,7 +618,7 @@ mod tests {
 
         drop(job);
         let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
-        shutdown_channel(r, w)?;
+        shutdown_channel(r, w).await?;
         Ok(())
     }
 
@@ -664,7 +672,7 @@ mod tests {
 
         drop(job);
         let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
-        shutdown_channel(r, w)?;
+        shutdown_channel(r, w).await?;
         Ok(())
     }
 
@@ -704,7 +712,7 @@ mod tests {
 
         drop(job);
         let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
-        shutdown_channel(r, w)?;
+        shutdown_channel(r, w).await?;
         Ok(())
     }
 
@@ -753,7 +761,7 @@ mod tests {
         assert_eq!(res, true);
         drop(job);
         let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
-        shutdown_channel(r, w)?;
+        shutdown_channel(r, w).await?;
         Ok(())
     }
 
@@ -793,7 +801,7 @@ mod tests {
         assert!(res.is_err());
         drop(job);
         let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
-        shutdown_channel(r, w)?;
+        shutdown_channel(r, w).await?;
         Ok(())
     }
 
@@ -833,7 +841,7 @@ mod tests {
 
         drop(job);
         let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
-        shutdown_channel(r, w)?;
+        shutdown_channel(r, w).await?;
 
         Ok(())
     }
@@ -868,7 +876,7 @@ mod tests {
 
         drop(job);
         let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
-        shutdown_channel(r, w)?;
+        shutdown_channel(r, w).await?;
 
         Ok(())
     }
@@ -928,24 +936,23 @@ mod tests {
 
         drop(job);
         let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
-        shutdown_channel(r, w)?;
+        shutdown_channel(r, w).await?;
 
         Ok(())
     }
 
-    #[tokio::test]
-    async fn test_run_sync_basic_until_complete() -> Result<()> {
+    async fn basic_sync_delivery(
+        id: u128,
+    ) -> Result<(NonBlockingReader, Mutex<NonBlockingWriter>)> {
         let (r, w) = get_channel().await?;
-
         let mut frames = vec![];
-
         let n = 20;
         for _ in 0..n {
             let f = gen_properly_filled_frame();
             frames.push(f);
             tokio_timerfd::sleep(Duration::from_millis(30)).await?;
         }
-
+        //dbg!("frames filled", thread_now.elapsed(),);
         let store = MockStore {
             messages: frames
                 .iter()
@@ -958,7 +965,7 @@ mod tests {
                 .collect(),
         };
         let store = Arc::new(Mutex::new(store));
-
+        //dbg!("store created", thread_now.elapsed());
         let job_conf = JobConfigurationBuilder::default()
             .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
             .stored_source_id("source_id".to_string())
@@ -969,7 +976,7 @@ mod tests {
         let mut job = Job::new(
             store,
             w.clone(),
-            0,
+            id,
             0,
             JobStopCondition::last_frame(frames.last().as_ref().unwrap().get_uuid_u128()),
             job_conf,
@@ -996,8 +1003,14 @@ mod tests {
 
         drop(job);
         let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
-        shutdown_channel(r, w)?;
 
+        Ok((r, w))
+    }
+
+    #[tokio::test]
+    async fn test_run_sync_basic_until_complete() -> Result<()> {
+        let (r, w) = basic_sync_delivery(0).await?;
+        shutdown_channel(r, w).await?;
         Ok(())
     }
 
@@ -1086,7 +1099,7 @@ mod tests {
 
         drop(job);
         let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
-        shutdown_channel(r, w)?;
+        shutdown_channel(r, w).await?;
 
         Ok(())
     }
@@ -1157,7 +1170,7 @@ mod tests {
 
         drop(job);
         let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
-        shutdown_channel(r, w)?;
+        shutdown_channel(r, w).await?;
 
         Ok(())
     }
@@ -1230,18 +1243,87 @@ mod tests {
 
         drop(job);
         let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
-        shutdown_channel(r, w)?;
+        shutdown_channel(r, w).await?;
 
         Ok(())
     }
 
     #[tokio::test]
     async fn concurrent_jobs() -> Result<()> {
-        todo!("Implement")
+        let t = tokio::spawn(basic_sync_delivery(0));
+        let t2 = tokio::spawn(basic_sync_delivery(1));
+        sleep(Duration::from_secs(1)).await?;
+        let (r1, w1) = t.await??;
+        let (r2, w2) = t2.await??;
+        shutdown_channel(r1, w1).await?;
+        shutdown_channel(r2, w2).await?;
+        Ok(())
     }
 
     #[tokio::test]
     async fn job_with_update() -> Result<()> {
-        todo!("Implement")
+        let (r, w) = get_channel().await?;
+
+        let frames = vec![
+            gen_properly_filled_frame(),
+            gen_properly_filled_frame(),
+            gen_properly_filled_frame(),
+        ];
+
+        let store = MockStore {
+            messages: frames
+                .iter()
+                .map(|f| {
+                    (
+                        Some((f.to_message(), vec![], vec![])),
+                        Duration::from_millis(10),
+                    )
+                })
+                .collect(),
+        };
+        let store = Arc::new(Mutex::new(store));
+
+        let job_conf = JobConfigurationBuilder::default()
+            .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
+            .stored_source_id("source_id".to_string())
+            .resulting_source_id("resulting_id".to_string())
+            .max_idle_duration(Duration::from_millis(50))
+            .build_and_validate()?;
+
+        let mut u = VideoFrameUpdate::default();
+        u.add_frame_attribute(Attribute::persistent("new", "value", vec![], &None, false));
+        u.set_frame_attribute_policy(AttributeUpdatePolicy::Error);
+
+        let mut job = Job::new(
+            store,
+            w.clone(),
+            0,
+            0,
+            JobStopCondition::last_frame(frames.last().as_ref().unwrap().get_uuid_u128()),
+            job_conf,
+            Some(u),
+        )?;
+        job.run_fast_until_complete().await?;
+        for f in frames {
+            let res = r.receive()?;
+            assert!(matches!(
+                res,
+                ReaderResult::Message {
+                    message,
+                    topic,
+                    routing_id: _,
+                    data: _
+                } if message.is_video_frame() && topic == b"resulting_id" && {
+                    let m = message.as_video_frame().unwrap();
+                    m.get_uuid_u128() == f.get_uuid_u128() && m.contains_attribute("new", "value")
+                }
+            ));
+        }
+
+        drop(job);
+        let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
+        shutdown_channel(r, w).await?;
+
+        Ok(())
     }
 }
