@@ -43,3 +43,11 @@ impl WriterCache {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test() {
+        todo!("Test")
+    }
+}
