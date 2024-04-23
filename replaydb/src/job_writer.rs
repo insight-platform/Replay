@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use log::info;
 use savant_core::message::Message;
 use savant_core::transport::zeromq::{
@@ -80,6 +80,9 @@ impl TryFrom<&WriterConfiguration> for NonBlockingWriter {
             .with_receive_hwm(configuration.receive_hwm as i32)?
             .with_send_hwm(configuration.send_hwm as i32)?
             .build()?;
+        if *conf.bind() {
+            bail!("JobWriter configuration must be a connect socket.");
+        }
         let mut w = NonBlockingWriter::new(&conf, configuration.inflight_ops)?;
         w.start()?;
         Ok(w)
