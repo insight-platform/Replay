@@ -59,6 +59,10 @@ impl RocksDbJob {
     pub async fn run_until_complete(&mut self) -> Result<()> {
         self.0.run_until_complete().await
     }
+
+    pub fn json(&self) -> Result<String> {
+        self.0.json()
+    }
 }
 
 #[derive(Serialize)]
@@ -1362,7 +1366,7 @@ mod tests {
             job_conf,
             Some(u),
         )?;
-        let json = job.json()?;
+        let _ = job.json()?;
         drop(job);
         let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
         shutdown_channel(r, w).await?;
