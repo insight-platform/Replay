@@ -1,7 +1,7 @@
 use anyhow::{bail, Result};
 use savant_core::message::Message;
 use savant_core::primitives::frame_update::VideoFrameUpdate;
-use savant_core::transport::zeromq::{NonBlockingWriter, WriterResult};
+use savant_core::transport::zeromq::WriterResult;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::{Debug, Formatter};
@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
+use crate::job_writer::JobWriter;
 use configuration::JobConfiguration;
 use stop_condition::JobStopCondition;
 
@@ -38,7 +39,7 @@ pub struct RocksDbJob(Job<RocksStore>);
 impl RocksDbJob {
     pub fn new(
         store: Arc<Mutex<RocksStore>>,
-        writer: Arc<Mutex<NonBlockingWriter>>,
+        writer: Arc<Mutex<JobWriter>>,
         id: u128,
         position: usize,
         stop_condition: JobStopCondition,
@@ -70,7 +71,7 @@ pub(crate) struct Job<S: Store> {
     #[serde(skip)]
     store: Arc<Mutex<S>>,
     #[serde(skip)]
-    writer: Arc<Mutex<NonBlockingWriter>>,
+    writer: Arc<Mutex<JobWriter>>,
     id: u128,
     stop_condition: JobStopCondition,
     position: usize,
@@ -104,7 +105,7 @@ where
 
     pub fn new(
         store: Arc<Mutex<S>>,
-        writer: Arc<Mutex<NonBlockingWriter>>,
+        writer: Arc<Mutex<JobWriter>>,
         id: u128,
         position: usize,
         stop_condition: JobStopCondition,
@@ -460,7 +461,8 @@ mod tests {
     use crate::job::configuration::JobConfigurationBuilder;
     use crate::job::stop_condition::JobStopCondition;
     use crate::job::{Job, RoutingLabelsUpdateStrategy, SendEither};
-    use crate::store::{gen_properly_filled_frame, Offset, Store};
+    use crate::job_writer::JobWriter;
+    use crate::store::{gen_properly_filled_frame, JobOffset, Store};
 
     struct MockStore {
         pub messages: Vec<(Option<(Message, Vec<u8>, Vec<Vec<u8>>)>, Duration)>,
@@ -491,7 +493,7 @@ mod tests {
             &mut self,
             _source_id: &str,
             _keyframe_uuid: Uuid,
-            _before: Offset,
+            _before: JobOffset,
         ) -> Result<Option<usize>> {
             unreachable!("MockStore::get_first")
         }
@@ -507,15 +509,9 @@ mod tests {
         Ok(())
     }
 
-    async fn get_channel() -> Result<(NonBlockingReader, Arc<Mutex<NonBlockingWriter>>)> {
+    async fn get_channel() -> Result<(NonBlockingReader, Arc<Mutex<JobWriter>>)> {
         let dir = tempfile::TempDir::new()?;
         let path = dir.path().to_str().unwrap();
-        let mut writer = NonBlockingWriter::new(
-            &WriterConfig::new()
-                .url(&format!("dealer+connect:ipc://{}/in", path))?
-                .build()?,
-            500,
-        )?;
         let mut reader = NonBlockingReader::new(
             &ReaderConfig::new()
                 .url(&format!("router+bind:ipc://{}/in", path))?
@@ -525,22 +521,26 @@ mod tests {
             500,
         )?;
         reader.start()?;
-        tokio_timerfd::sleep(Duration::from_millis(100)).await?;
+        sleep(Duration::from_millis(100)).await?;
+        let mut writer = NonBlockingWriter::new(
+            &WriterConfig::new()
+                .url(&format!("dealer+connect:ipc://{}/in", path))?
+                .build()?,
+            500,
+        )?;
         writer.start()?;
-        tokio_timerfd::sleep(Duration::from_millis(100)).await?;
+        sleep(Duration::from_millis(100)).await?;
 
-        Ok((reader, Arc::new(Mutex::new(writer))))
+        Ok((reader, Arc::new(Mutex::new(writer.into()))))
     }
 
-    async fn shutdown_channel(mut r: NonBlockingReader, w: Mutex<NonBlockingWriter>) -> Result<()> {
+    async fn shutdown_channel(mut r: NonBlockingReader, w: Mutex<JobWriter>) -> Result<()> {
         if !r.is_shutdown() {
             r.shutdown()?;
         }
 
-        let mut m = w.lock().await;
-        if !m.is_shutdown() {
-            m.shutdown()?;
-        }
+        let m = w.lock().await;
+        drop(m);
 
         Ok(())
     }
@@ -953,9 +953,7 @@ mod tests {
         Ok(())
     }
 
-    async fn basic_sync_delivery(
-        id: u128,
-    ) -> Result<(NonBlockingReader, Mutex<NonBlockingWriter>)> {
+    async fn basic_sync_delivery(id: u128) -> Result<(NonBlockingReader, Mutex<JobWriter>)> {
         let (r, w) = get_channel().await?;
         let mut frames = vec![];
         let n = 20;

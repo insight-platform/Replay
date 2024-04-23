@@ -1839,7 +1839,7 @@ dependencies = [
  "hashbrown 0.14.3",
  "log",
  "md-5",
- "parking_lot",
+ "mini-moka",
  "rocksdb",
  "savant_core",
  "serde",

@@ -1,12 +1,13 @@
 pub mod rocksdb;
 
 use anyhow::Result;
-use parking_lot::Mutex;
 use savant_core::message::Message;
 use savant_core::primitives::frame::VideoFrameProxy;
 use savant_core::test::gen_frame;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::SystemTime;
+use tokio::sync::Mutex;
 use uuid::Uuid;
 
 pub fn gen_properly_filled_frame() -> VideoFrameProxy {
@@ -25,7 +26,8 @@ pub fn gen_properly_filled_frame() -> VideoFrameProxy {
     f
 }
 
-pub enum Offset {
+#[derive(Debug, Deserialize, Serialize)]
+pub enum JobOffset {
     Blocks(usize),
     Seconds(f64),
 }
@@ -64,7 +66,7 @@ pub(crate) trait Store {
         &mut self,
         source_id: &str,
         keyframe_uuid: Uuid,
-        before: Offset,
+        before: JobOffset,
     ) -> Result<Option<usize>>;
 }
 
@@ -108,7 +110,7 @@ mod tests {
             &mut self,
             _: &str,
             keyframe_uuid: Uuid,
-            before: Offset,
+            before: JobOffset,
         ) -> Result<Option<usize>> {
             let idx = self.keyframes.iter().position(|(u, _)| u == &keyframe_uuid);
             if idx.is_none() {
@@ -117,14 +119,14 @@ mod tests {
             let idx = idx.unwrap();
 
             Ok(Some(match before {
-                Offset::Blocks(blocks_before) => {
+                JobOffset::Blocks(blocks_before) => {
                     if idx < blocks_before {
                         self.keyframes[0].1
                     } else {
                         self.keyframes[idx - blocks_before].1
                     }
                 }
-                Offset::Seconds(seconds_before) => {
+                JobOffset::Seconds(seconds_before) => {
                     let frame = self.messages[self.keyframes[idx].1]
                         .as_video_frame()
                         .unwrap();
@@ -213,7 +215,7 @@ mod tests {
         f.set_pts(6);
         store.add_message(&f.to_message(), &[], &[]).await?;
 
-        let first = store.get_first("", u, Offset::Blocks(1)).await?;
+        let first = store.get_first("", u, JobOffset::Blocks(1)).await?;
         assert_eq!(first, Some(4));
         let (m, _, _) = store.get_message("", first.unwrap()).await?.unwrap();
         assert!(matches!(
@@ -221,7 +223,7 @@ mod tests {
             Some(true)
         ));
 
-        let first_ts = store.get_first("", u, Offset::Seconds(5.0)).await?;
+        let first_ts = store.get_first("", u, JobOffset::Seconds(5.0)).await?;
         assert_eq!(first_ts, Some(0));
         let (m, _, _) = store.get_message("", first_ts.unwrap()).await?.unwrap();
 

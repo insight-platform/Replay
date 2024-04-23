@@ -1,4 +1,4 @@
-use crate::store::Offset;
+use crate::store::JobOffset;
 use anyhow::{bail, Result};
 use bincode::config::{BigEndian, Configuration};
 use bincode::{Decode, Encode};
@@ -274,7 +274,7 @@ impl super::Store for RocksStore {
         &mut self,
         source_id: &str,
         keyframe_uuid: Uuid,
-        before: Offset,
+        before: JobOffset,
     ) -> Result<Option<usize>> {
         let source_hash = self.get_source_hash(source_id)?;
         let key = KeyframeKey {
@@ -321,12 +321,12 @@ impl super::Store for RocksStore {
                 dbg!(current_pts);
 
                 match before {
-                    Offset::Blocks(blocks_before) => {
+                    JobOffset::Blocks(blocks_before) => {
                         if req_index - current_index >= blocks_before {
                             break;
                         }
                     }
-                    Offset::Seconds(seconds_before) => {
+                    JobOffset::Seconds(seconds_before) => {
                         if req_pts - current_pts
                             >= Duration::from_secs_f64(seconds_before).as_nanos()
                         {
@@ -421,7 +421,7 @@ mod tests {
         db.add_message(&f.to_message(), &[], &[]).await.unwrap();
 
         let first = db
-            .get_first(&source_id, uuid_f3, Offset::Blocks(1))
+            .get_first(&source_id, uuid_f3, JobOffset::Blocks(1))
             .await
             .unwrap()
             .unwrap();
@@ -447,14 +447,14 @@ mod tests {
         db.add_message(&f.to_message(), &[], &[]).await.unwrap();
 
         let first = db
-            .get_first(&source_id, uuid_f3, Offset::Seconds(0.005))
+            .get_first(&source_id, uuid_f3, JobOffset::Seconds(0.005))
             .await
             .unwrap()
             .unwrap();
         assert_eq!(first, 1);
 
         let first = db
-            .get_first(&source_id, uuid_f3, Offset::Seconds(0.015))
+            .get_first(&source_id, uuid_f3, JobOffset::Seconds(0.015))
             .await
             .unwrap()
             .unwrap();
