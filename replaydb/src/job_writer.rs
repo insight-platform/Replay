@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use std::thread;
 use std::time::Duration;
 
+pub mod cache;
+
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub enum WriterSocketType {
     #[default]
@@ -17,7 +19,7 @@ pub enum WriterSocketType {
 }
 
 #[derive(Debug, Serialize, Deserialize, Hash, PartialEq, Eq, Clone)]
-pub struct WriterConfiguration {
+pub struct JobWriterConfiguration {
     url: String,
     send_timeout: Duration,
     send_retries: usize,
@@ -28,7 +30,7 @@ pub struct WriterConfiguration {
     inflight_ops: usize,
 }
 
-impl Default for WriterConfiguration {
+impl Default for JobWriterConfiguration {
     fn default() -> Self {
         Self {
             url: String::from("dealer+connect:///tmp/in"),
@@ -44,9 +46,9 @@ impl Default for WriterConfiguration {
 }
 
 #[allow(clippy::too_many_arguments)]
-impl WriterConfiguration {
+impl JobWriterConfiguration {
     pub fn new(
-        url: String,
+        url: &str,
         send_timeout: Duration,
         send_retries: usize,
         receive_timeout: Duration,
@@ -56,7 +58,7 @@ impl WriterConfiguration {
         inflight_ops: usize,
     ) -> Self {
         Self {
-            url,
+            url: url.to_string(),
             send_timeout,
             send_retries,
             receive_timeout,
@@ -68,10 +70,10 @@ impl WriterConfiguration {
     }
 }
 
-impl TryFrom<&WriterConfiguration> for NonBlockingWriter {
+impl TryFrom<&JobWriterConfiguration> for NonBlockingWriter {
     type Error = anyhow::Error;
 
-    fn try_from(configuration: &WriterConfiguration) -> Result<Self, Self::Error> {
+    fn try_from(configuration: &JobWriterConfiguration) -> Result<Self, Self::Error> {
         let conf = WriterConfigBuilder::default()
             .url(&configuration.url)?
             .with_receive_timeout(configuration.receive_timeout.as_millis() as i32)?
@@ -81,9 +83,11 @@ impl TryFrom<&WriterConfiguration> for NonBlockingWriter {
             .with_receive_hwm(configuration.receive_hwm as i32)?
             .with_send_hwm(configuration.send_hwm as i32)?
             .build()?;
+
         if *conf.bind() {
             bail!("JobWriter configuration must be a connect socket.");
         }
+
         let mut w = NonBlockingWriter::new(&conf, configuration.inflight_ops)?;
         w.start()?;
         Ok(w)
@@ -133,13 +137,5 @@ impl Drop for JobWriter {
                 w.shutdown().expect("Failed to shutdown writer");
             }
         });
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test() {
-        todo!("Test")
     }
 }

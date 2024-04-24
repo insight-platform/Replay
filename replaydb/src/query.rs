@@ -1,6 +1,6 @@
 use crate::job::configuration::JobConfiguration;
 use crate::job::stop_condition::JobStopCondition;
-use crate::job_writer::WriterConfiguration;
+use crate::job_writer::JobWriterConfiguration;
 use crate::store::JobOffset;
 use anyhow::Result;
 use savant_core::primitives::Attribute;
@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct JobQuery {
-    pub socket: WriterConfiguration,
+    pub socket: JobWriterConfiguration,
     pub configuration: JobConfiguration,
     pub stop_condition: JobStopCondition,
     pub offset: JobOffset,
@@ -17,7 +17,7 @@ pub struct JobQuery {
 
 impl JobQuery {
     pub fn new(
-        socket: WriterConfiguration,
+        socket: JobWriterConfiguration,
         configuration: JobConfiguration,
         stop_condition: JobStopCondition,
         offset: JobOffset,
@@ -49,7 +49,7 @@ impl JobQuery {
 mod tests {
     use crate::job::configuration::JobConfigurationBuilder;
     use crate::job::stop_condition::JobStopCondition;
-    use crate::job_writer::WriterConfiguration;
+    use crate::job_writer::JobWriterConfiguration;
     use crate::query::JobQuery;
     use crate::store::JobOffset;
     use savant_core::primitives::attribute_value::AttributeValue;
@@ -68,7 +68,7 @@ mod tests {
         let stop_condition = JobStopCondition::frame_count(1);
         let offset = JobOffset::Blocks(0);
         let job_query = JobQuery::new(
-            WriterConfiguration::default(),
+            JobWriterConfiguration::default(),
             configuration,
             stop_condition,
             offset,

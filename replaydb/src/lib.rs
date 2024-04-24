@@ -7,7 +7,6 @@ pub mod job_writer;
 pub mod query;
 pub mod store;
 pub mod stream_processor;
-pub mod writer_cache;
 
 pub fn topic_to_string(topic: &[u8]) -> String {
     from_utf8(topic)
