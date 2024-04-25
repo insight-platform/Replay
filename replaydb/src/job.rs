@@ -10,13 +10,15 @@ use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
 use crate::job_writer::JobWriter;
+use crate::store::rocksdb::RocksStore;
 use configuration::JobConfiguration;
 use stop_condition::JobStopCondition;
 
-use crate::store::rocksdb::RocksStore;
 use crate::store::Store;
 
 pub mod configuration;
+pub mod factory;
+pub mod query;
 pub mod stop_condition;
 
 const STD_FPS: f64 = 30.0;
@@ -317,7 +319,7 @@ where
                 .await?;
 
             self.position += 1;
-            if self.stop_condition.check(&m) {
+            if self.stop_condition.check(&m)? {
                 log::info!("Job Id: {} has been finished by stop condition!", self.id);
                 break;
             }
@@ -427,7 +429,7 @@ where
 
             self.position += 1;
 
-            if self.stop_condition.check(&message) {
+            if self.stop_condition.check(&message)? {
                 log::info!("Job Id: {} has been finished by stop condition!", self.id);
                 break;
             }
