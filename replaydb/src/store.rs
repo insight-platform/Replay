@@ -5,6 +5,7 @@ use savant_core::message::Message;
 use savant_core::primitives::frame::VideoFrameProxy;
 use savant_core::test::gen_frame;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::sync::Mutex;
@@ -35,7 +36,7 @@ pub enum JobOffset {
 pub struct RocksDbStore(Arc<Mutex<rocksdb::RocksStore>>);
 
 impl RocksDbStore {
-    pub fn new(path: &str) -> Result<Self> {
+    pub fn new(path: &Path) -> Result<Self> {
         Ok(Self(Arc::new(Mutex::new(rocksdb::RocksStore::new(
             path,
             Default::default(),

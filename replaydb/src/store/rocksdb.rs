@@ -16,7 +16,7 @@ const CF_MESSAGE_DB: &str = "message_db";
 const CF_KEYFRAME_DB: &str = "keyframes_db";
 const CF_INDEX_DB: &str = "index_db";
 
-pub(crate) fn dir_size(path: &str) -> io::Result<usize> {
+pub(crate) fn dir_size(path: &Path) -> io::Result<usize> {
     fn dir_size(mut dir: fs::ReadDir) -> io::Result<usize> {
         dir.try_fold(0, |acc, file| {
             let file = file?;
@@ -113,7 +113,7 @@ impl RocksStore {
             .insert(source_id.to_string(), value);
         Ok(value)
     }
-    pub fn new(path: &str, ttl: Duration) -> Result<Self> {
+    pub fn new(path: &Path, ttl: Duration) -> Result<Self> {
         let configuration = bincode::config::standard().with_big_endian();
 
         let mut cf_opts = Options::default();
@@ -153,11 +153,11 @@ impl RocksStore {
         })
     }
 
-    pub fn remove_db(path: &str) -> Result<()> {
+    pub fn remove_db(path: &Path) -> Result<()> {
         Ok(DB::destroy(&Options::default(), path)?)
     }
 
-    pub fn disk_size(&self, path: &str) -> Result<usize> {
+    pub fn disk_size(&self, path: &Path) -> Result<usize> {
         Ok(dir_size(path)?)
     }
 }
@@ -229,7 +229,8 @@ impl super::Store for RocksStore {
             source_md5: source_hash,
         };
 
-        let index_value = IndexValue { index: index + 1 };
+        let index = index + 1;
+        let index_value = IndexValue { index };
 
         let index_key_bytes = bincode::encode_to_vec(index_key, self.configuration)?;
         let index_value_bytes = bincode::encode_to_vec(index_value, self.configuration)?;
@@ -240,8 +241,8 @@ impl super::Store for RocksStore {
         batch.put_cf(cf, &index_key_bytes, &index_value_bytes);
 
         self.db.write(batch)?;
-        self.resident_index_values.insert(source_id, index + 1);
-        Ok(index)
+        self.resident_index_values.insert(source_id, index);
+        Ok(index - 1)
     }
 
     async fn get_message(
@@ -352,7 +353,7 @@ mod tests {
     #[tokio::test]
     async fn test_rocksdb_init() -> Result<()> {
         let dir = tempfile::TempDir::new()?;
-        let path = dir.path().to_str().unwrap();
+        let path = dir.path();
         let mut db = RocksStore::new(path, Duration::from_secs(60))?;
 
         let source_id1 = "test_source_id-1";
@@ -378,7 +379,7 @@ mod tests {
     #[tokio::test]
     async fn test_load_message() -> Result<()> {
         let dir = tempfile::TempDir::new()?;
-        let path = dir.path().to_str().unwrap();
+        let path = dir.path();
         let frame = gen_frame();
         let source_id = frame.get_source_id();
         {
@@ -405,7 +406,7 @@ mod tests {
     #[tokio::test]
     async fn test_find_first_block_in_blocks() -> Result<()> {
         let dir = tempfile::TempDir::new()?;
-        let path = dir.path().to_str().unwrap();
+        let path = dir.path();
         let mut db = RocksStore::new(path, Duration::from_secs(60)).unwrap();
         let f = gen_properly_filled_frame();
         let source_id = f.get_source_id();
@@ -434,7 +435,7 @@ mod tests {
     #[tokio::test]
     async fn test_find_first_block_in_duration() -> Result<()> {
         let dir = tempfile::TempDir::new()?;
-        let path = dir.path().to_str().unwrap();
+        let path = dir.path();
         let mut db = RocksStore::new(path, Duration::from_secs(60)).unwrap();
         let f = gen_properly_filled_frame();
         let source_id = f.get_source_id();

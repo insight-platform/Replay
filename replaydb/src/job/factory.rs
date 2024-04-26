@@ -7,6 +7,7 @@ use anyhow::Result;
 use savant_core::primitives::frame_update::VideoFrameUpdate;
 use savant_core::utils::uuid_v7::incremental_uuid_v7;
 use std::num::NonZeroU64;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
@@ -15,7 +16,7 @@ pub struct RocksDbJobFactory(JobFactory<RocksStore>);
 
 impl RocksDbJobFactory {
     pub fn new(
-        path: &str,
+        path: &Path,
         max_capacity: NonZeroU64,
         data_ttl: Duration,
         writer_cache_ttl: Duration,
@@ -84,5 +85,15 @@ where
             job_configuration.configuration,
             Some(update),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use anyhow::Result;
+    #[tokio::test]
+    async fn test_create_rocksdb_job() -> Result<()> {
+        //let store =
+        Ok(())
     }
 }

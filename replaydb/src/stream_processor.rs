@@ -188,12 +188,16 @@ mod tests {
     #[tokio::test]
     async fn test_stream_processor() -> Result<()> {
         let dir = tempfile::TempDir::new()?;
-        let path = dir.path().to_str().unwrap();
+        let path = dir.path();
         let db = crate::store::rocksdb::RocksStore::new(path, Duration::from_secs(60)).unwrap();
 
         let mut in_reader = NonBlockingReader::new(
             &ReaderConfig::new()
-                .url(&format!("router+bind:ipc://{}/in", path))?
+                .url(&format!(
+                    "router+bind:ipc://{}/in",
+                    path.to_str()
+                        .expect("Cannot convert path to a valid string")
+                ))?
                 .with_fix_ipc_permissions(Some(0o777))?
                 .build()?,
             100,
@@ -203,7 +207,11 @@ mod tests {
 
         let mut in_writer = NonBlockingWriter::new(
             &WriterConfig::new()
-                .url(&format!("dealer+connect:ipc://{}/in", path))?
+                .url(&format!(
+                    "dealer+connect:ipc://{}/in",
+                    path.to_str()
+                        .expect("Cannot convert path to a valid string")
+                ))?
                 .build()?,
             100,
         )?;
@@ -212,7 +220,11 @@ mod tests {
 
         let mut out_reader = NonBlockingReader::new(
             &ReaderConfig::new()
-                .url(&format!("router+bind:ipc://{}/out", path))?
+                .url(&format!(
+                    "router+bind:ipc://{}/out",
+                    path.to_str()
+                        .expect("Cannot convert path to a valid string")
+                ))?
                 .with_fix_ipc_permissions(Some(0o777))?
                 .build()?,
             100,
@@ -222,7 +234,11 @@ mod tests {
 
         let mut out_writer = NonBlockingWriter::new(
             &WriterConfig::new()
-                .url(&format!("dealer+connect:ipc://{}/out", path))?
+                .url(&format!(
+                    "dealer+connect:ipc://{}/out",
+                    path.to_str()
+                        .expect("Cannot convert path to a valid string")
+                ))?
                 .build()?,
             100,
         )?;
