@@ -5,6 +5,7 @@ use crate::store::JobOffset;
 use anyhow::Result;
 use savant_core::primitives::Attribute;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct JobQuery {
@@ -21,7 +22,7 @@ impl JobQuery {
         socket: JobSinkConfiguration,
         configuration: JobConfiguration,
         stop_condition: JobStopCondition,
-        anchor_keyframe: String,
+        anchor_keyframe: Uuid,
         offset: JobOffset,
         attributes: Vec<Attribute>,
     ) -> Self {
@@ -31,7 +32,7 @@ impl JobQuery {
             stop_condition,
             offset,
             attributes,
-            anchor_keyframe,
+            anchor_keyframe: anchor_keyframe.to_string(),
         }
     }
 
@@ -75,7 +76,7 @@ mod tests {
             JobSinkConfiguration::default(),
             configuration,
             stop_condition,
-            incremental_uuid_v7().to_string(),
+            incremental_uuid_v7(),
             offset,
             vec![Attribute::persistent(
                 "key",

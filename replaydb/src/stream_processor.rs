@@ -176,7 +176,9 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::store::rocksdb::RocksStore;
     use crate::store::{gen_properly_filled_frame, Store};
+    use crate::stream_processor::StreamProcessor;
     use anyhow::Result;
     use savant_core::transport::zeromq::{
         NonBlockingReader, NonBlockingWriter, ReaderConfig, ReaderResult, WriterConfig,
@@ -189,7 +191,7 @@ mod tests {
     async fn test_stream_processor() -> Result<()> {
         let dir = tempfile::TempDir::new()?;
         let path = dir.path();
-        let db = crate::store::rocksdb::RocksStore::new(path, Duration::from_secs(60)).unwrap();
+        let db = RocksStore::new(path, Duration::from_secs(60))?;
 
         let mut in_reader = NonBlockingReader::new(
             &ReaderConfig::new()
@@ -246,7 +248,7 @@ mod tests {
         tokio_timerfd::sleep(Duration::from_millis(100)).await?;
 
         let db = Arc::new(Mutex::new(db));
-        let mut processor = crate::stream_processor::StreamProcessor::new(
+        let mut processor = StreamProcessor::new(
             db.clone(),
             in_reader,
             out_writer,

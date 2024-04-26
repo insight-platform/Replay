@@ -68,6 +68,20 @@ impl JobSinkConfiguration {
             inflight_ops,
         }
     }
+
+    #[cfg(test)]
+    pub fn test_dealer_connect_sink() -> Self {
+        Self::new(
+            "dealer+connect:ipc:///tmp/in",
+            Duration::from_secs(1),
+            3,
+            Duration::from_secs(1),
+            3,
+            1000,
+            100,
+            100,
+        )
+    }
 }
 
 impl TryFrom<&JobSinkConfiguration> for NonBlockingWriter {

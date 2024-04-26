@@ -295,7 +295,6 @@ impl super::Store for RocksStore {
 
             let req_index = value.index;
             let req_pts = value.ts;
-            dbg!(req_pts);
 
             let cf = self
                 .db
@@ -319,7 +318,6 @@ impl super::Store for RocksStore {
 
                 current_index = value.index;
                 let current_pts = value.ts;
-                dbg!(current_pts);
 
                 match before {
                     JobOffset::Blocks(blocks_before) => {
@@ -407,25 +405,23 @@ mod tests {
     async fn test_find_first_block_in_blocks() -> Result<()> {
         let dir = tempfile::TempDir::new()?;
         let path = dir.path();
-        let mut db = RocksStore::new(path, Duration::from_secs(60)).unwrap();
+        let mut db = RocksStore::new(path, Duration::from_secs(60))?;
         let f = gen_properly_filled_frame();
         let source_id = f.get_source_id();
-        db.add_message(&f.to_message(), &[], &[]).await.unwrap();
+        db.add_message(&f.to_message(), &[], &[]).await?;
         let f = gen_properly_filled_frame();
-        db.add_message(&f.to_message(), &[], &[]).await.unwrap();
+        db.add_message(&f.to_message(), &[], &[]).await?;
         let mut other_source_frame = gen_properly_filled_frame();
         other_source_frame.set_source_id("other_source_id");
         db.add_message(&other_source_frame.to_message(), &[], &[])
-            .await
-            .unwrap();
+            .await?;
         let f = gen_properly_filled_frame();
         let uuid_f3 = f.get_uuid();
-        db.add_message(&f.to_message(), &[], &[]).await.unwrap();
+        db.add_message(&f.to_message(), &[], &[]).await?;
 
         let first = db
             .get_first(&source_id, uuid_f3, JobOffset::Blocks(1))
-            .await
-            .unwrap()
+            .await?
             .unwrap();
         assert_eq!(first, 1);
 
@@ -436,29 +432,27 @@ mod tests {
     async fn test_find_first_block_in_duration() -> Result<()> {
         let dir = tempfile::TempDir::new()?;
         let path = dir.path();
-        let mut db = RocksStore::new(path, Duration::from_secs(60)).unwrap();
+        let mut db = RocksStore::new(path, Duration::from_secs(60))?;
         let f = gen_properly_filled_frame();
         let source_id = f.get_source_id();
-        db.add_message(&f.to_message(), &[], &[]).await.unwrap();
+        db.add_message(&f.to_message(), &[], &[]).await?;
         sleep(Duration::from_millis(10)).await?;
         let f = gen_properly_filled_frame();
-        db.add_message(&f.to_message(), &[], &[]).await.unwrap();
+        db.add_message(&f.to_message(), &[], &[]).await?;
         sleep(Duration::from_millis(10)).await?;
         let f = gen_properly_filled_frame();
         let uuid_f3 = f.get_uuid();
-        db.add_message(&f.to_message(), &[], &[]).await.unwrap();
+        db.add_message(&f.to_message(), &[], &[]).await?;
 
         let first = db
             .get_first(&source_id, uuid_f3, JobOffset::Seconds(0.005))
-            .await
-            .unwrap()
+            .await?
             .unwrap();
         assert_eq!(first, 1);
 
         let first = db
             .get_first(&source_id, uuid_f3, JobOffset::Seconds(0.015))
-            .await
-            .unwrap()
+            .await?
             .unwrap();
         assert_eq!(first, 0);
 
