@@ -1,5 +1,12 @@
 {
-  "management_port": 8080,
+  "common": {
+    "pass_metadata_only": false,
+    "management_port": 8080,
+    "stats_period": {
+      "secs": 60,
+      "nanos": 0
+    }
+  },
   "in_stream": {
     "url": "router+bind:ipc:///tmp/${SOCKET_PATH_IN:-undefined}",
     "receive_timeout": {
@@ -10,8 +17,9 @@
     "topic_prefix_spec": {
       "source_id": "source_id"
     },
-    "routing_ids_cache_size": 1000,
-    "fix_ipc_permissions": 511
+    "source_cache_size": 1000,
+    "fix_ipc_permissions": 511,
+    "inflight_ops": 100
   },
   "out_stream": {
     "url": "dealer+connect:ipc:///tmp/${SOCKET_PATH_OUT:-undefined}",

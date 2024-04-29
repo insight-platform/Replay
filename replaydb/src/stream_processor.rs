@@ -174,6 +174,34 @@ where
     }
 }
 
+pub struct RocksDbStreamProcessor(StreamProcessor<RocksStore>);
+
+impl RocksDbStreamProcessor {
+    pub fn new(
+        db: Arc<Mutex<RocksStore>>,
+        input: NonBlockingReader,
+        output: NonBlockingWriter,
+        stats_period: Duration,
+        send_metadata_only: bool,
+    ) -> Self {
+        Self(StreamProcessor::new(
+            db,
+            input,
+            output,
+            stats_period,
+            send_metadata_only,
+        ))
+    }
+
+    pub async fn run_once(&mut self) -> Result<()> {
+        self.0.run_once().await
+    }
+
+    pub async fn run(&mut self) -> Result<()> {
+        self.0.run().await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::store::rocksdb::RocksStore;
@@ -292,33 +320,5 @@ mod tests {
             }
         }
         Ok(())
-    }
-}
-
-pub struct RocksDbStreamProcessor(StreamProcessor<RocksStore>);
-
-impl RocksDbStreamProcessor {
-    pub fn new(
-        db: Arc<Mutex<RocksStore>>,
-        input: NonBlockingReader,
-        output: NonBlockingWriter,
-        stats_period: Duration,
-        send_metadata_only: bool,
-    ) -> Self {
-        Self(StreamProcessor::new(
-            db,
-            input,
-            output,
-            stats_period,
-            send_metadata_only,
-        ))
-    }
-
-    pub async fn run_once(&mut self) -> Result<()> {
-        self.0.run_once().await
-    }
-
-    pub async fn run(&mut self) -> Result<()> {
-        self.0.run().await
     }
 }
