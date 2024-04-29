@@ -8,7 +8,7 @@
     },
     "receive_hwm": 1000,
     "topic_prefix_spec": {
-      "SourceId": "source_id"
+      "source_id": "source_id"
     },
     "routing_ids_cache_size": 1000,
     "fix_ipc_permissions": 511
@@ -30,7 +30,7 @@
     "inflight_ops": 100
   },
   "storage": {
-    "RocksDB": {
+    "rocksdb": {
       "path": "/tmp/rocksdb",
       "data_expiration_ttl": {
         "secs": 3600,

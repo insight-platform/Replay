@@ -5,7 +5,9 @@ use twelf::config;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum TopicPrefixSpec {
+    #[serde(rename = "source_id")]
     SourceId(String),
+    #[serde(rename = "prefix")]
     Prefix(String),
     None,
 }
@@ -22,6 +24,7 @@ pub struct SourceConfiguration {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Storage {
+    #[serde(rename = "rocksdb")]
     RocksDB {
         path: String,
         data_expiration_ttl: Duration,
