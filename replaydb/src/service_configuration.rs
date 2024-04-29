@@ -120,6 +120,7 @@ impl TryFrom<ServiceConfiguration> for RocksDbStreamProcessor {
 #[cfg(test)]
 mod tests {
     use crate::service_configuration::ServiceConfiguration;
+    use crate::stream_processor::RocksDbStreamProcessor;
     use anyhow::Result;
     use std::env::set_var;
     use twelf::Layer;
@@ -136,6 +137,7 @@ mod tests {
         assert_eq!(config.common.management_port, 8080);
         assert_eq!(config.in_stream.url, "router+bind:ipc:///tmp/in");
         assert_eq!(config.out_stream.url, "dealer+connect:ipc:///tmp/out");
+        let _ = RocksDbStreamProcessor::try_from(config)?;
         Ok(())
     }
 }
