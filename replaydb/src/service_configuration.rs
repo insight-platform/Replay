@@ -86,7 +86,7 @@ impl TryFrom<&SourceConfiguration> for NonBlockingReader {
             .with_routing_cache_size(source_conf.source_cache_size)?
             .with_fix_ipc_permissions(source_conf.fix_ipc_permissions)?
             .build()?;
-        Ok(NonBlockingReader::new(&conf, source_conf.inflight_ops)?)
+        NonBlockingReader::new(&conf, source_conf.inflight_ops)
     }
 }
 
@@ -130,6 +130,7 @@ mod tests {
         // set env SOCKET_PATH=in
         set_var("SOCKET_PATH_IN", "in");
         set_var("SOCKET_PATH_OUT", "out");
+
         let config = ServiceConfiguration::with_layers(&[
             Layer::Json("./assets/rocksdb.json".into()),
             Layer::Env(None),
