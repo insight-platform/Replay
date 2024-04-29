@@ -51,7 +51,7 @@ pub struct CommonConfiguration {
 pub struct ServiceConfiguration {
     common: CommonConfiguration,
     in_stream: SourceConfiguration,
-    out_stream: SinkConfiguration,
+    out_stream: Option<SinkConfiguration>,
     storage: Storage,
 }
 
@@ -101,7 +101,12 @@ impl TryFrom<ServiceConfiguration> for RocksDbStreamProcessor {
                 data_expiration_ttl,
             } => {
                 let in_stream = NonBlockingReader::try_from(&conf.in_stream)?;
-                let out_stream = NonBlockingWriter::try_from(&conf.out_stream)?;
+
+                let out_stream = if let Some(oc) = &conf.out_stream {
+                    Some(NonBlockingWriter::try_from(oc)?)
+                } else {
+                    None
+                };
                 let path = Path::new(&path);
                 let storage = RocksStore::new(path, data_expiration_ttl)?;
                 RocksDbStreamProcessor::new(
@@ -137,7 +142,8 @@ mod tests {
         ])?;
         assert_eq!(config.common.management_port, 8080);
         assert_eq!(config.in_stream.url, "router+bind:ipc:///tmp/in");
-        assert_eq!(config.out_stream.url, "dealer+connect:ipc:///tmp/out");
+        let os = config.out_stream.as_ref().unwrap();
+        assert_eq!(os.url, "dealer+connect:ipc:///tmp/out");
         let _ = RocksDbStreamProcessor::try_from(config)?;
         Ok(())
     }

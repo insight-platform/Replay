@@ -19,7 +19,7 @@ struct StreamStats {
 struct StreamProcessor<T: Store> {
     db: Arc<Mutex<T>>,
     input: NonBlockingReader,
-    output: NonBlockingWriter,
+    output: Option<NonBlockingWriter>,
     stats: StreamStats,
     last_stats: Instant,
     stats_period: Duration,
@@ -33,7 +33,7 @@ where
     pub fn new(
         db: Arc<Mutex<T>>,
         input: NonBlockingReader,
-        output: NonBlockingWriter,
+        output: Option<NonBlockingWriter>,
         stats_period: Duration,
         send_metadata_only: bool,
     ) -> Self {
@@ -72,8 +72,12 @@ where
     }
 
     async fn send_message(&mut self, topic: &str, message: &Message, data: &[&[u8]]) -> Result<()> {
+        if self.output.is_none() {
+            return Ok(());
+        }
+        let output = self.output.as_mut().unwrap();
         loop {
-            let res = self.output.send_message(topic, message, data)?;
+            let res = output.send_message(topic, message, data)?;
             loop {
                 let send_res = res.try_get()?;
                 if send_res.is_none() {
@@ -180,7 +184,7 @@ impl RocksDbStreamProcessor {
     pub fn new(
         db: Arc<Mutex<RocksStore>>,
         input: NonBlockingReader,
-        output: NonBlockingWriter,
+        output: Option<NonBlockingWriter>,
         stats_period: Duration,
         send_metadata_only: bool,
     ) -> Self {
@@ -279,7 +283,7 @@ mod tests {
         let mut processor = StreamProcessor::new(
             db.clone(),
             in_reader,
-            out_writer,
+            Some(out_writer),
             Duration::from_secs(30),
             false,
         );
