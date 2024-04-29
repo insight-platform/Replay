@@ -1,7 +1,7 @@
 use crate::job_writer::SinkConfiguration;
 use crate::store::rocksdb::RocksStore;
 use crate::stream_processor::RocksDbStreamProcessor;
-use anyhow::Result;
+use anyhow::{bail, Result};
 use savant_core::transport::zeromq::{NonBlockingReader, NonBlockingWriter, ReaderConfigBuilder};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -55,6 +55,15 @@ pub struct ServiceConfiguration {
     storage: Storage,
 }
 
+impl ServiceConfiguration {
+    pub(crate) fn validate(&self) -> Result<()> {
+        if self.common.management_port <= 1024 {
+            bail!("Management port must be set to a value greater than 1024!");
+        }
+        Ok(())
+    }
+}
+
 impl From<&TopicPrefixSpec> for savant_core::transport::zeromq::TopicPrefixSpec {
     fn from(value: &TopicPrefixSpec) -> Self {
         match value {
@@ -85,6 +94,7 @@ impl TryFrom<ServiceConfiguration> for RocksDbStreamProcessor {
     type Error = anyhow::Error;
 
     fn try_from(conf: ServiceConfiguration) -> Result<Self, Self::Error> {
+        conf.validate()?;
         let storage = match conf.storage {
             Storage::RocksDB {
                 path,
