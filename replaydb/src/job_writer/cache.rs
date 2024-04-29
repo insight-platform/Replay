@@ -1,4 +1,4 @@
-use crate::job_writer::{JobSinkConfiguration, JobWriter};
+use crate::job_writer::{JobWriter, SinkConfiguration};
 use anyhow::Result;
 use mini_moka::sync::{Cache, CacheBuilder};
 use savant_core::transport::zeromq::NonBlockingWriter;
@@ -8,7 +8,7 @@ use std::time::Duration;
 use tokio::sync::Mutex;
 
 pub struct JobWriterCache {
-    cache: Cache<JobSinkConfiguration, Arc<Mutex<JobWriter>>>,
+    cache: Cache<SinkConfiguration, Arc<Mutex<JobWriter>>>,
 }
 
 // safety: JobWriterCache is Send and Sync because the underlying cache is Send and Sync
@@ -26,7 +26,7 @@ impl JobWriterCache {
         }
     }
 
-    pub fn get(&mut self, configuration: &JobSinkConfiguration) -> Result<Arc<Mutex<JobWriter>>> {
+    pub fn get(&mut self, configuration: &SinkConfiguration) -> Result<Arc<Mutex<JobWriter>>> {
         if let Some(w) = self.cache.get(configuration) {
             Ok(w.clone())
         } else {
@@ -42,7 +42,7 @@ impl JobWriterCache {
 #[cfg(test)]
 mod tests {
     use crate::job_writer::cache::JobWriterCache;
-    use crate::job_writer::JobSinkConfiguration;
+    use crate::job_writer::SinkConfiguration;
     use anyhow::Result;
     use std::num::NonZeroU64;
     use std::sync::Arc;
@@ -55,7 +55,7 @@ mod tests {
             NonZeroU64::new(1024).expect("Must be positive"),
             Duration::from_millis(10),
         );
-        let conf = JobSinkConfiguration::new(
+        let conf = SinkConfiguration::new(
             "dealer+connect:ipc:///tmp/in",
             Duration::from_secs(1),
             3,

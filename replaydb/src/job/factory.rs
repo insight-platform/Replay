@@ -92,7 +92,7 @@ mod tests {
     use crate::job::factory::RocksDbJobFactory;
     use crate::job::query::JobQuery;
     use crate::job::stop_condition::JobStopCondition;
-    use crate::job_writer::JobSinkConfiguration;
+    use crate::job_writer::SinkConfiguration;
     use crate::store::rocksdb::RocksStore;
     use crate::store::{gen_properly_filled_frame, JobOffset, Store};
     use anyhow::Result;
@@ -134,7 +134,7 @@ mod tests {
         let stop_condition = JobStopCondition::frame_count(1);
         let offset = JobOffset::Blocks(1);
         let job_query = JobQuery::new(
-            JobSinkConfiguration::test_dealer_connect_sink(),
+            SinkConfiguration::test_dealer_connect_sink(),
             configuration,
             stop_condition,
             f.get_uuid(),

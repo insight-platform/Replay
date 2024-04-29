@@ -4,6 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub mod job;
 pub mod job_writer;
+pub mod service_configuration;
 pub mod store;
 pub mod stream_processor;
 

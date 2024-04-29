@@ -19,18 +19,18 @@ pub enum WriterSocketType {
 }
 
 #[derive(Debug, Serialize, Deserialize, Hash, PartialEq, Eq, Clone)]
-pub struct JobSinkConfiguration {
-    url: String,
-    send_timeout: Duration,
-    send_retries: usize,
-    receive_timeout: Duration,
-    receive_retries: usize,
-    send_hwm: usize,
-    receive_hwm: usize,
-    inflight_ops: usize,
+pub struct SinkConfiguration {
+    pub(crate) url: String,
+    pub(crate) send_timeout: Duration,
+    pub(crate) send_retries: usize,
+    pub(crate) receive_timeout: Duration,
+    pub(crate) receive_retries: usize,
+    pub(crate) send_hwm: usize,
+    pub(crate) receive_hwm: usize,
+    pub(crate) inflight_ops: usize,
 }
 
-impl Default for JobSinkConfiguration {
+impl Default for SinkConfiguration {
     fn default() -> Self {
         Self {
             url: String::from("dealer+connect:///tmp/in"),
@@ -46,7 +46,7 @@ impl Default for JobSinkConfiguration {
 }
 
 #[allow(clippy::too_many_arguments)]
-impl JobSinkConfiguration {
+impl SinkConfiguration {
     pub fn new(
         url: &str,
         send_timeout: Duration,
@@ -84,10 +84,10 @@ impl JobSinkConfiguration {
     }
 }
 
-impl TryFrom<&JobSinkConfiguration> for NonBlockingWriter {
+impl TryFrom<&SinkConfiguration> for NonBlockingWriter {
     type Error = anyhow::Error;
 
-    fn try_from(configuration: &JobSinkConfiguration) -> Result<Self, Self::Error> {
+    fn try_from(configuration: &SinkConfiguration) -> Result<Self, Self::Error> {
         let conf = WriterConfigBuilder::default()
             .url(&configuration.url)?
             .with_receive_timeout(configuration.receive_timeout.as_millis() as i32)?
