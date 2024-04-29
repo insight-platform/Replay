@@ -137,7 +137,7 @@ mod tests {
         set_var("SOCKET_PATH_OUT", "out");
 
         let config =
-            ServiceConfiguration::with_layers(&[Layer::Json("./assets/rocksdb.json".into())])?;
+            ServiceConfiguration::with_layers(&[Layer::Json("assets/rocksdb.json".into())])?;
         assert_eq!(config.common.management_port, 8080);
         assert_eq!(config.in_stream.url, "router+bind:ipc:///tmp/in");
         let os = config.out_stream.as_ref().unwrap();
@@ -149,7 +149,7 @@ mod tests {
     #[test]
     fn test_configuration_opt_out() -> Result<()> {
         let config = ServiceConfiguration::with_layers(&[Layer::Json(
-            "./assets/rocksdb_opt_out.json".into(),
+            "assets/rocksdb_opt_out.json".into(),
         )])?;
         let _ = RocksDbStreamProcessor::try_from(config)?;
         Ok(())
