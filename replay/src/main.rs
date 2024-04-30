@@ -1,4 +1,20 @@
-fn main() {
+use anyhow::{anyhow, Result};
+use replaydb::service_configuration::ServiceConfiguration;
+use replaydb::stream_processor::RocksDbStreamProcessor;
+use std::env::args;
+
+#[tokio::main]
+async fn main() -> Result<()> {
     env_logger::init();
-    println!("Hello, world!");
+    let conf_arg = args()
+        .nth(1)
+        .ok_or_else(|| anyhow!("missing configuration argument"))?;
+    let conf = ServiceConfiguration::new(&conf_arg)?;
+    let mut stream_processor = RocksDbStreamProcessor::try_from(&conf)?;
+    let job = tokio::spawn(async move {
+        let _ = stream_processor.run().await;
+    });
+    tokio::join!(job).0?;
+    //let _ = job.await?;
+    Ok(())
 }

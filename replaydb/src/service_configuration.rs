@@ -8,7 +8,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
-use twelf::config;
+use twelf::{config, Layer};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum TopicPrefixSpec {
@@ -16,6 +16,7 @@ pub enum TopicPrefixSpec {
     SourceId(String),
     #[serde(rename = "prefix")]
     Prefix(String),
+    #[serde(rename = "none")]
     None,
 }
 
@@ -62,6 +63,12 @@ impl ServiceConfiguration {
         }
         Ok(())
     }
+
+    pub fn new(path: &str) -> Result<Self> {
+        let conf = Self::with_layers(&[Layer::Json(path.into())])?;
+        conf.validate()?;
+        Ok(conf)
+    }
 }
 
 impl From<&TopicPrefixSpec> for savant_core::transport::zeromq::TopicPrefixSpec {
@@ -90,17 +97,17 @@ impl TryFrom<&SourceConfiguration> for NonBlockingReader {
     }
 }
 
-impl TryFrom<ServiceConfiguration> for RocksDbStreamProcessor {
+impl TryFrom<&ServiceConfiguration> for RocksDbStreamProcessor {
     type Error = anyhow::Error;
 
-    fn try_from(conf: ServiceConfiguration) -> Result<Self, Self::Error> {
-        conf.validate()?;
-        let storage = match conf.storage {
+    fn try_from(conf: &ServiceConfiguration) -> Result<Self, Self::Error> {
+        let storage = match &conf.storage {
             Storage::RocksDB {
                 path,
                 data_expiration_ttl,
             } => {
-                let in_stream = NonBlockingReader::try_from(&conf.in_stream)?;
+                let mut in_stream = NonBlockingReader::try_from(&conf.in_stream)?;
+                in_stream.start()?;
 
                 let out_stream = if let Some(oc) = &conf.out_stream {
                     Some(NonBlockingWriter::try_from(oc)?)
@@ -108,7 +115,7 @@ impl TryFrom<ServiceConfiguration> for RocksDbStreamProcessor {
                     None
                 };
                 let path = Path::new(&path);
-                let storage = RocksStore::new(path, data_expiration_ttl)?;
+                let storage = RocksStore::new(path, *data_expiration_ttl)?;
                 RocksDbStreamProcessor::new(
                     Arc::new(Mutex::new(storage)),
                     in_stream,
@@ -142,7 +149,7 @@ mod tests {
         assert_eq!(config.in_stream.url, "router+bind:ipc:///tmp/in");
         let os = config.out_stream.as_ref().unwrap();
         assert_eq!(os.url, "dealer+connect:ipc:///tmp/out");
-        let _ = RocksDbStreamProcessor::try_from(config)?;
+        let _ = RocksDbStreamProcessor::try_from(&config)?;
         Ok(())
     }
 
@@ -151,7 +158,7 @@ mod tests {
         let config = ServiceConfiguration::with_layers(&[Layer::Json(
             "assets/rocksdb_opt_out.json".into(),
         )])?;
-        let _ = RocksDbStreamProcessor::try_from(config)?;
+        let _ = RocksDbStreamProcessor::try_from(&config)?;
         Ok(())
     }
 }

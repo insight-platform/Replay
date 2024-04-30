@@ -56,7 +56,7 @@ where
             if Instant::now() - self.last_stats > self.stats_period {
                 log::info!(
                     target: "replay::db::stream_processor::receive_message",
-                    "Stats: packets: {}, bytes: {}",
+                    "Packets: {}, Bytes: {}",
                     self.stats.packet_counter,
                     self.stats.byte_counter
                 );
@@ -118,6 +118,8 @@ where
                     routing_id,
                     data,
                 } => {
+                    self.stats.packet_counter += 1;
+                    self.stats.byte_counter += data.iter().map(|v| v.len() as u64).sum::<u64>();
                     log::debug!(
                         "Received message: topic: {}, routing_id: {}, message: {:?}",
                         topic_to_string(&topic),
