@@ -93,7 +93,6 @@ impl SyncJobStopCondition {
     pub fn new(stop_condition: JobStopCondition) -> Self {
         Self(ParkingLotMutex::new(stop_condition))
     }
-
 }
 
 impl Serialize for SyncJobStopCondition {
@@ -103,7 +102,6 @@ impl Serialize for SyncJobStopCondition {
     {
         self.0.lock().serialize(serializer)
     }
-
 }
 
 impl<S> Debug for Job<S>

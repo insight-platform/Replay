@@ -1,14 +1,16 @@
-use crate::store::rocksdb::RocksStore;
-use crate::store::Store;
-use crate::topic_to_string;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
 use anyhow::{bail, Result};
 use savant_core::message::Message;
 use savant_core::transport::zeromq::{
     NonBlockingReader, NonBlockingWriter, ReaderResult, WriterResult,
 };
-use std::sync::Arc;
-use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
+
+use crate::store::rocksdb::RocksStore;
+use crate::store::Store;
+use crate::topic_to_string;
 
 #[derive(Debug)]
 struct StreamStats {
@@ -64,15 +66,26 @@ where
             }
             let message = self.input.try_receive();
             if message.is_none() {
+                log::debug!(
+                    target: "replay::db::stream_processor::receive_message",
+                    "No message received, sleeping for 1ms."
+                );
                 tokio_timerfd::sleep(Duration::from_millis(1)).await?;
                 continue;
             }
+            log::debug!(
+                target: "replay::db::stream_processor::receive_message",
+                "Received message."
+            );
             return message.unwrap();
         }
     }
 
     async fn send_message(&mut self, topic: &str, message: &Message, data: &[&[u8]]) -> Result<()> {
         if self.output.is_none() {
+            log::debug!(target: "replay::db::stream_processor::send_message",
+                "No output writer, skipping."
+            );
             return Ok(());
         }
         let output = self.output.as_mut().unwrap();
@@ -87,17 +100,29 @@ where
                 let send_res = send_res.unwrap()?;
                 match send_res {
                     WriterResult::SendTimeout => {
-                        log::warn!("Send timeout, retrying.");
+                        log::warn!(
+                            target: "replay::db::stream_processor::send_message",
+                            "Send timeout, retrying sending {}.", message.meta().seq_id);
                         break;
                     }
                     WriterResult::AckTimeout(_) => {
-                        log::warn!("Ack timeout, retrying.");
+                        log::warn!(
+                            target: "replay::db::stream_processor::send_message",
+                            "Ack timeout, retrying sending {:?}.", message.meta().seq_id);
                         break;
                     }
                     WriterResult::Ack { .. } => {
+                        log::debug!(
+                            target: "replay::db::stream_processor::send_message",
+                            "Message ack received for {:?}.", message
+                        );
                         return Ok(());
                     }
                     WriterResult::Success { .. } => {
+                        log::debug!(
+                            target: "replay::db::stream_processor::send_message",
+                            "Message {:?} sent.", message
+                        );
                         return Ok(());
                     }
                 }
@@ -110,7 +135,9 @@ where
         match message {
             Ok(m) => match m {
                 ReaderResult::Blacklisted(topic) => {
-                    log::debug!("Received blacklisted message: {}", topic_to_string(&topic));
+                    log::debug!(
+                        target: "replay::db::stream_processor::run_once",
+                        "Received blacklisted message: {}", topic_to_string(&topic));
                 }
                 ReaderResult::Message {
                     message,
@@ -121,6 +148,7 @@ where
                     self.stats.packet_counter += 1;
                     self.stats.byte_counter += data.iter().map(|v| v.len() as u64).sum::<u64>();
                     log::debug!(
+                        target: "replay::db::stream_processor::run_once",
                         "Received message: topic: {}, routing_id: {}, message: {:?}",
                         topic_to_string(&topic),
                         topic_to_string(routing_id.as_ref().unwrap_or(&Vec::new())),
@@ -130,6 +158,10 @@ where
                         || message.is_user_data()
                         || message.is_end_of_stream()
                     {
+                        log::debug!(
+                            target: "replay::db::stream_processor::run_once",
+                            "Adding message {:?} to database.", &message
+                        );
                         self.db
                             .lock()
                             .await
@@ -146,10 +178,13 @@ where
                         .await?;
                 }
                 ReaderResult::Timeout => {
-                    log::debug!("Timeout receiving message, waiting for next message.");
+                    log::debug!(
+                        target: "replay::db::stream_processor::run_once",
+                        "Timeout receiving message, waiting for next message.");
                 }
                 ReaderResult::PrefixMismatch { topic, routing_id } => {
                     log::warn!(
+                        target: "replay::db::stream_processor::run_once",
                         "Received message with mismatched prefix: topic: {:?}, routing_id: {:?}",
                         topic_to_string(&topic),
                         topic_to_string(routing_id.as_ref().unwrap_or(&Vec::new()))
@@ -157,13 +192,16 @@ where
                 }
                 ReaderResult::RoutingIdMismatch { topic, routing_id } => {
                     log::warn!(
-                            "Received message with mismatched routing_id: topic: {:?}, routing_id: {:?}",
-                            topic_to_string(&topic),
-                            topic_to_string(routing_id.as_ref().unwrap_or(&Vec::new()))
-                        );
+                    target: "replay::db::stream_processor::run_once",
+                        "Received message with mismatched routing_id: topic: {:?}, routing_id: {:?}",
+                        topic_to_string(&topic),
+                        topic_to_string(routing_id.as_ref().unwrap_or(&Vec::new()))
+                    );
                 }
                 ReaderResult::TooShort(m) => {
-                    log::warn!("Received message that was too short: {:?}", m);
+                    log::warn!(
+                        target: "replay::db::stream_processor::run_once",
+                        "Received message that was too short: {:?}", m);
                 }
             },
             Err(e) => {
@@ -210,16 +248,18 @@ impl RocksDbStreamProcessor {
 
 #[cfg(test)]
 mod tests {
-    use crate::store::rocksdb::RocksStore;
-    use crate::store::{gen_properly_filled_frame, Store};
-    use crate::stream_processor::StreamProcessor;
+    use std::sync::Arc;
+    use std::time::Duration;
+
     use anyhow::Result;
     use savant_core::transport::zeromq::{
         NonBlockingReader, NonBlockingWriter, ReaderConfig, ReaderResult, WriterConfig,
     };
-    use std::sync::Arc;
-    use std::time::Duration;
     use tokio::sync::Mutex;
+
+    use crate::store::rocksdb::RocksStore;
+    use crate::store::{gen_properly_filled_frame, Store};
+    use crate::stream_processor::StreamProcessor;
 
     #[tokio::test]
     async fn test_stream_processor() -> Result<()> {
