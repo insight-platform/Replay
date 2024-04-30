@@ -1926,6 +1926,7 @@ dependencies = [
  "log",
  "md-5",
  "mini-moka",
+ "parking_lot",
  "rocksdb",
  "savant_core",
  "serde",

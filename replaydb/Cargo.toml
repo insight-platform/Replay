@@ -20,6 +20,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tokio-timerfd = "0.2"
 derive_builder = "0.20"
 twelf = { version = "0.15", features = ["json", "env", "shellexpand"], default-features = false }
+parking_lot = "0.12"
 
 [dev-dependencies]
 tempfile = "3.10"

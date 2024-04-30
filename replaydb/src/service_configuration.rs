@@ -1,13 +1,9 @@
 use crate::job_writer::SinkConfiguration;
-use crate::store::rocksdb::RocksStore;
-use crate::stream_processor::RocksDbStreamProcessor;
 use anyhow::{bail, Result};
-use savant_core::transport::zeromq::{NonBlockingReader, NonBlockingWriter, ReaderConfigBuilder};
+use savant_core::transport::zeromq::{NonBlockingReader, ReaderConfigBuilder};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
-use std::sync::Arc;
+use std::result;
 use std::time::Duration;
-use tokio::sync::Mutex;
 use twelf::{config, Layer};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -45,6 +41,8 @@ pub struct CommonConfiguration {
     pub(crate) management_port: u16,
     pub(crate) stats_period: Duration,
     pub(crate) pass_metadata_only: bool,
+    pub(crate) job_writer_cache_max_capacity: usize,
+    pub(crate) job_writer_cache_ttl: Duration,
 }
 
 #[config]
@@ -84,7 +82,9 @@ impl From<&TopicPrefixSpec> for savant_core::transport::zeromq::TopicPrefixSpec 
 impl TryFrom<&SourceConfiguration> for NonBlockingReader {
     type Error = anyhow::Error;
 
-    fn try_from(source_conf: &SourceConfiguration) -> Result<NonBlockingReader, Self::Error> {
+    fn try_from(
+        source_conf: &SourceConfiguration,
+    ) -> result::Result<NonBlockingReader, Self::Error> {
         let conf = ReaderConfigBuilder::default()
             .url(&source_conf.url)?
             .with_receive_timeout(source_conf.receive_timeout.as_millis() as i32)?
@@ -94,71 +94,5 @@ impl TryFrom<&SourceConfiguration> for NonBlockingReader {
             .with_fix_ipc_permissions(source_conf.fix_ipc_permissions)?
             .build()?;
         NonBlockingReader::new(&conf, source_conf.inflight_ops)
-    }
-}
-
-impl TryFrom<&ServiceConfiguration> for RocksDbStreamProcessor {
-    type Error = anyhow::Error;
-
-    fn try_from(conf: &ServiceConfiguration) -> Result<Self, Self::Error> {
-        let storage = match &conf.storage {
-            Storage::RocksDB {
-                path,
-                data_expiration_ttl,
-            } => {
-                let mut in_stream = NonBlockingReader::try_from(&conf.in_stream)?;
-                in_stream.start()?;
-
-                let out_stream = if let Some(oc) = &conf.out_stream {
-                    Some(NonBlockingWriter::try_from(oc)?)
-                } else {
-                    None
-                };
-                let path = Path::new(&path);
-                let storage = RocksStore::new(path, *data_expiration_ttl)?;
-                RocksDbStreamProcessor::new(
-                    Arc::new(Mutex::new(storage)),
-                    in_stream,
-                    out_stream,
-                    conf.common.stats_period,
-                    conf.common.pass_metadata_only,
-                )
-            }
-        };
-        Ok(storage)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::service_configuration::ServiceConfiguration;
-    use crate::stream_processor::RocksDbStreamProcessor;
-    use anyhow::Result;
-    use std::env::set_var;
-    use twelf::Layer;
-
-    #[test]
-    fn test_configuration() -> Result<()> {
-        // set env SOCKET_PATH=in
-        set_var("SOCKET_PATH_IN", "in");
-        set_var("SOCKET_PATH_OUT", "out");
-
-        let config =
-            ServiceConfiguration::with_layers(&[Layer::Json("assets/rocksdb.json".into())])?;
-        assert_eq!(config.common.management_port, 8080);
-        assert_eq!(config.in_stream.url, "router+bind:ipc:///tmp/in");
-        let os = config.out_stream.as_ref().unwrap();
-        assert_eq!(os.url, "dealer+connect:ipc:///tmp/out");
-        let _ = RocksDbStreamProcessor::try_from(&config)?;
-        Ok(())
-    }
-
-    #[test]
-    fn test_configuration_opt_out() -> Result<()> {
-        let config = ServiceConfiguration::with_layers(&[Layer::Json(
-            "assets/rocksdb_opt_out.json".into(),
-        )])?;
-        let _ = RocksDbStreamProcessor::try_from(&config)?;
-        Ok(())
     }
 }

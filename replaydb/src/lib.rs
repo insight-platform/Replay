@@ -5,6 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub mod job;
 pub mod job_writer;
 pub mod service_configuration;
+//pub mod service_runtime;
 pub mod store;
 pub mod stream_processor;
 
@@ -21,3 +22,5 @@ pub fn systime_ms() -> u128 {
         .expect("Time went backwards");
     since_the_epoch.as_millis()
 }
+
+pub type ParkingLotMutex<T> = parking_lot::Mutex<T>;

@@ -5,6 +5,11 @@
     "stats_period": {
       "secs": 60,
       "nanos": 0
+    },
+    "job_writer_cache_max_capacity": 1000,
+    "job_writer_cache_expiration_ttl": {
+      "secs": 60,
+      "nanos": 0
     }
   },
   "in_stream": {

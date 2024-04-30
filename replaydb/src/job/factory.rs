@@ -16,10 +16,14 @@ pub struct RocksDbJobFactory(JobFactory<RocksStore>);
 impl RocksDbJobFactory {
     pub fn new(
         store: Arc<Mutex<RocksStore>>,
-        max_capacity: NonZeroU64,
+        writer_cache_max_capacity: NonZeroU64,
         writer_cache_ttl: Duration,
     ) -> Result<Self> {
-        Ok(Self(JobFactory::new(store, max_capacity, writer_cache_ttl)))
+        Ok(Self(JobFactory::new(
+            store,
+            writer_cache_max_capacity,
+            writer_cache_ttl,
+        )))
     }
 
     pub fn store(&self) -> Arc<Mutex<RocksStore>> {
@@ -40,10 +44,14 @@ impl<S> JobFactory<S>
 where
     S: Store,
 {
-    pub fn new(store: Arc<Mutex<S>>, max_capacity: NonZeroU64, ttl: Duration) -> Self {
+    pub fn new(
+        store: Arc<Mutex<S>>,
+        writer_cache_max_capacity: NonZeroU64,
+        writer_cache_ttl: Duration,
+    ) -> Self {
         Self {
             store,
-            writer_cache: JobWriterCache::new(max_capacity, ttl),
+            writer_cache: JobWriterCache::new(writer_cache_max_capacity, writer_cache_ttl),
         }
     }
     pub async fn create_job(&mut self, query: JobQuery) -> Result<Job<S>> {

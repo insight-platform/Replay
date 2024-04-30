@@ -2,7 +2,7 @@ use anyhow::{bail, Result};
 use savant_core::message::Message;
 use savant_core::primitives::frame_update::VideoFrameUpdate;
 use savant_core::transport::zeromq::WriterResult;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 use std::sync::Arc;
@@ -11,6 +11,7 @@ use tokio::sync::Mutex;
 
 use crate::job_writer::JobWriter;
 use crate::store::rocksdb::RocksStore;
+use crate::ParkingLotMutex;
 use configuration::JobConfiguration;
 use stop_condition::JobStopCondition;
 
@@ -66,6 +67,10 @@ impl RocksDbJob {
     pub fn json(&self) -> Result<String> {
         self.0.json()
     }
+
+    pub fn get_stop_condition_ref(&self) -> Arc<SyncJobStopCondition> {
+        self.0.get_stop_condition_ref()
+    }
 }
 
 #[derive(Serialize)]
@@ -75,11 +80,30 @@ pub(crate) struct Job<S: Store> {
     #[serde(skip)]
     writer: Arc<Mutex<JobWriter>>,
     id: u128,
-    stop_condition: JobStopCondition,
+    stop_condition: Arc<SyncJobStopCondition>,
     position: usize,
     configuration: JobConfiguration,
     last_pts: Option<i64>,
     update: Option<VideoFrameUpdate>,
+}
+
+pub struct SyncJobStopCondition(ParkingLotMutex<JobStopCondition>);
+
+impl SyncJobStopCondition {
+    pub fn new(stop_condition: JobStopCondition) -> Self {
+        Self(ParkingLotMutex::new(stop_condition))
+    }
+
+}
+
+impl Serialize for SyncJobStopCondition {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.0.lock().serialize(serializer)
+    }
+
 }
 
 impl<S> Debug for Job<S>
@@ -89,7 +113,7 @@ where
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("Job")
             .field("id", &self.id)
-            .field("stop_condition", &self.stop_condition)
+            .field("stop_condition", &self.stop_condition.0.lock())
             .field("position", &self.position)
             .field("configuration", &self.configuration)
             .field("update", &self.update)
@@ -101,6 +125,10 @@ impl<S> Job<S>
 where
     S: Store,
 {
+    pub fn get_stop_condition_ref(&self) -> Arc<SyncJobStopCondition> {
+        self.stop_condition.clone()
+    }
+
     pub fn json(&self) -> Result<String> {
         serde_json::to_string(self).map_err(Into::into)
     }
@@ -127,7 +155,7 @@ where
             writer,
             id,
             position,
-            stop_condition,
+            stop_condition: Arc::new(SyncJobStopCondition::new(stop_condition)),
             configuration,
             last_pts: None,
             update,
@@ -319,7 +347,7 @@ where
                 .await?;
 
             self.position += 1;
-            if self.stop_condition.check(&m)? {
+            if self.stop_condition.0.lock().check(&m)? {
                 log::info!("Job Id: {} has been finished by stop condition!", self.id);
                 break;
             }
@@ -429,7 +457,7 @@ where
 
             self.position += 1;
 
-            if self.stop_condition.check(&message)? {
+            if self.stop_condition.0.lock().check(&message)? {
                 log::info!("Job Id: {} has been finished by stop condition!", self.id);
                 break;
             }
