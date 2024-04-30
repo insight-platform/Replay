@@ -9,12 +9,12 @@ async fn main() -> Result<()> {
     let conf_arg = args()
         .nth(1)
         .ok_or_else(|| anyhow!("missing configuration argument"))?;
-    let conf = ServiceConfiguration::new(&conf_arg)?;
-    let mut stream_processor = RocksDbStreamProcessor::try_from(&conf)?;
-    let job = tokio::spawn(async move {
-        let _ = stream_processor.run().await;
-    });
-    tokio::join!(job).0?;
+    let _conf = ServiceConfiguration::new(&conf_arg)?;
+    // let mut stream_processor = RocksDbStreamProcessor::try_from(&conf)?;
+    // let job = tokio::spawn(async move {
+    //     let _ = stream_processor.run().await;
+    // });
+    // tokio::join!(job).0?;
     //let _ = job.await?;
     Ok(())
 }
