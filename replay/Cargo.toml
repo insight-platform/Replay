@@ -1,7 +1,16 @@
 [package]
 name = "replay"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description.workspace = true
+homepage.workspace = true
+repository.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+license.workspace = true
+rust-version.workspace = true
 
 [[bin]]
 name = "replay-edge"
@@ -12,7 +21,11 @@ name = "replay-cloud"
 path = "src/cloud/cloud.rs"
 
 [dependencies]
-env_logger = "0.11"
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 replaydb = { path = "../replaydb" }
-anyhow = "1"
+anyhow = { workspace = true }
+env_logger = { workspace = true }
+hashbrown = { workspace = true }
+log = { workspace = true }
+parking_lot = { workspace = true }
+tokio = { workspace = true }
+tokio-timerfd = { workspace = true }

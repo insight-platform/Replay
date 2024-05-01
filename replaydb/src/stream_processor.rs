@@ -9,7 +9,7 @@ use savant_core::transport::zeromq::{
 use tokio::sync::Mutex;
 
 use crate::store::rocksdb::RocksStore;
-use crate::store::Store;
+use crate::store::{SyncRocksDbStore, Store};
 use crate::topic_to_string;
 
 #[derive(Debug)]
@@ -222,7 +222,7 @@ pub struct RocksDbStreamProcessor(StreamProcessor<RocksStore>);
 
 impl RocksDbStreamProcessor {
     pub fn new(
-        db: Arc<Mutex<RocksStore>>,
+        db: SyncRocksDbStore,
         input: NonBlockingReader,
         output: Option<NonBlockingWriter>,
         stats_period: Duration,

@@ -21,6 +21,7 @@ pub mod configuration;
 pub mod factory;
 pub mod query;
 pub mod stop_condition;
+pub mod repository;
 
 const STD_FPS: f64 = 30.0;
 
