@@ -61,6 +61,7 @@ pub(crate) trait Store {
         source_id: &str,
         from: Option<u64>,
         to: Option<u64>,
+        limit: usize,
     ) -> Result<Vec<Uuid>>;
 }
 
@@ -152,6 +153,7 @@ mod tests {
             _source_id: &str,
             from: Option<u64>,
             to: Option<u64>,
+            _limit: usize,
         ) -> Result<Vec<Uuid>> {
             let from_uuid = get_keyframe_boundary(from, 0);
             let to_uuid = get_keyframe_boundary(to, u64::MAX);

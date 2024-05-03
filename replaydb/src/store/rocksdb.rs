@@ -348,6 +348,7 @@ impl super::Store for RocksStore {
         source_id: &str,
         from: Option<u64>,
         to: Option<u64>,
+        limit: usize,
     ) -> Result<Vec<Uuid>> {
         let from_uuid = get_keyframe_boundary(from.map(|f| f.saturating_sub(1)), 0).as_u128();
         let to_uuid = get_keyframe_boundary(to.map(|t| t.saturating_add(1)), {
@@ -386,6 +387,9 @@ impl super::Store for RocksStore {
                 break;
             }
             keyframes.push(Uuid::from_u128(key.keyframe_uuid));
+            if keyframes.len() >= limit {
+                break;
+            }
         }
         Ok(keyframes)
     }
@@ -393,8 +397,8 @@ impl super::Store for RocksStore {
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Div;
     use savant_core::test::gen_frame;
+    use std::ops::Div;
     use tokio_timerfd::sleep;
 
     use crate::store::{gen_properly_filled_frame, Store};
@@ -530,26 +534,21 @@ mod tests {
         }
         let first = keyframes[1].get_timestamp().unwrap().to_unix().0;
         let last = keyframes[N - 2].get_timestamp().unwrap().to_unix().0;
-        let res_keyframes = db.find_keyframes(&source, Some(first), Some(last)).await?;
+        let res_keyframes = db.find_keyframes(&source, Some(first), Some(last), N).await?;
         assert_eq!(res_keyframes.len(), N);
 
-        let first = keyframes[N.div(2) + 1]
-            .get_timestamp()
-            .unwrap()
-            .to_unix()
-            .0;
+        let first = keyframes[N.div(2) + 1].get_timestamp().unwrap().to_unix().0;
 
-        let res_keyframes = db.find_keyframes(&source, Some(first), None).await?;
+        let res_keyframes = db.find_keyframes(&source, Some(first), None, N).await?;
         assert_eq!(res_keyframes.len(), N.div_ceil(2));
 
-        let last = keyframes[N.div(2) - 1]
-            .get_timestamp()
-            .unwrap()
-            .to_unix()
-            .0;
+        let last = keyframes[N.div(2) - 1].get_timestamp().unwrap().to_unix().0;
 
-        let res_keyframes = db.find_keyframes(&source, None, Some(last)).await?;
+        let res_keyframes = db.find_keyframes(&source, None, Some(last), N).await?;
         assert_eq!(res_keyframes.len(), N.div_ceil(2));
+
+        let res_keyframes = db.find_keyframes(&source, None, None, 2).await?;
+        assert_eq!(res_keyframes.len(), 2);
 
         Ok(())
     }

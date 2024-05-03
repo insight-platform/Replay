@@ -533,6 +533,7 @@ mod tests {
             _source_id: &str,
             _from: Option<u64>,
             _to: Option<u64>,
+            _limit: usize,
         ) -> Result<Vec<Uuid>> {
             unreachable!("MockStore::find_keyframes")
         }
