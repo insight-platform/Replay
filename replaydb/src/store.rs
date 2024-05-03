@@ -55,11 +55,19 @@ pub(crate) trait Store {
         keyframe_uuid: Uuid,
         before: JobOffset,
     ) -> Result<Option<usize>>;
+
+    async fn find_keyframes(
+        &mut self,
+        source_id: &str,
+        from: Option<u64>,
+        to: Option<u64>,
+    ) -> Result<Vec<Uuid>>;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::get_keyframe_boundary;
     use savant_core::primitives::eos::EndOfStream;
 
     struct SampleStore {
@@ -137,6 +145,22 @@ mod tests {
                     i
                 }
             }))
+        }
+
+        async fn find_keyframes(
+            &mut self,
+            _source_id: &str,
+            from: Option<u64>,
+            to: Option<u64>,
+        ) -> Result<Vec<Uuid>> {
+            let from_uuid = get_keyframe_boundary(from, 0);
+            let to_uuid = get_keyframe_boundary(to, u64::MAX);
+            Ok(self
+                .keyframes
+                .iter()
+                .filter(|(u, _)| from_uuid <= *u && *u <= to_uuid)
+                .map(|(u, _)| *u)
+                .collect())
         }
     }
 

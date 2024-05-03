@@ -1,27 +1,28 @@
+use std::fmt;
+use std::fmt::{Debug, Formatter};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
 use anyhow::{bail, Result};
 use savant_core::message::Message;
 use savant_core::primitives::frame_update::VideoFrameUpdate;
 use savant_core::transport::zeromq::WriterResult;
 use serde::{Deserialize, Serialize, Serializer};
-use std::fmt;
-use std::fmt::{Debug, Formatter};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
-use crate::job_writer::JobWriter;
-use crate::store::rocksdb::RocksStore;
-use crate::ParkingLotMutex;
 use configuration::JobConfiguration;
 use stop_condition::JobStopCondition;
 
+use crate::job_writer::JobWriter;
+use crate::store::rocksdb::RocksStore;
 use crate::store::Store;
+use crate::ParkingLotMutex;
 
 pub mod configuration;
 pub mod factory;
 pub mod query;
-pub mod stop_condition;
 pub mod repository;
+pub mod stop_condition;
 
 const STD_FPS: f64 = 30.0;
 
@@ -525,6 +526,15 @@ mod tests {
             _before: JobOffset,
         ) -> Result<Option<usize>> {
             unreachable!("MockStore::get_first")
+        }
+
+        async fn find_keyframes(
+            &mut self,
+            _source_id: &str,
+            _from: Option<u64>,
+            _to: Option<u64>,
+        ) -> Result<Vec<Uuid>> {
+            unreachable!("MockStore::find_keyframes")
         }
     }
 

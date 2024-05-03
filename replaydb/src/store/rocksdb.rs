@@ -1,4 +1,8 @@
-use crate::store::JobOffset;
+use std::mem::size_of;
+use std::path::Path;
+use std::time::{Duration, SystemTime};
+use std::{fs, io};
+
 use anyhow::{bail, Result};
 use bincode::config::{BigEndian, Configuration};
 use bincode::{Decode, Encode};
@@ -6,11 +10,10 @@ use hashbrown::HashMap;
 use md5::{Digest, Md5};
 use rocksdb::{ColumnFamilyDescriptor, Direction, Options, ReadOptions, SliceTransform, DB};
 use savant_core::message::{load_message, save_message, Message};
-use std::mem::size_of;
-use std::path::Path;
-use std::time::Duration;
-use std::{fs, io};
 use uuid::Uuid;
+
+use crate::get_keyframe_boundary;
+use crate::store::JobOffset;
 
 const CF_MESSAGE_DB: &str = "message_db";
 const CF_KEYFRAME_DB: &str = "keyframes_db";
@@ -339,14 +342,64 @@ impl super::Store for RocksStore {
             Ok(None)
         }
     }
+
+    async fn find_keyframes(
+        &mut self,
+        source_id: &str,
+        from: Option<u64>,
+        to: Option<u64>,
+    ) -> Result<Vec<Uuid>> {
+        let from_uuid = get_keyframe_boundary(from.map(|f| f.saturating_sub(1)), 0).as_u128();
+        let to_uuid = get_keyframe_boundary(to.map(|t| t.saturating_add(1)), {
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)?
+                .as_secs()
+                + 1
+        })
+        .as_u128();
+        let source_hash = self.get_source_hash(source_id)?;
+
+        let cf = self
+            .db
+            .cf_handle(CF_KEYFRAME_DB)
+            .expect("CF_KEYFRAME_DB not found");
+
+        let key = KeyframeKey {
+            source_md5: source_hash,
+            keyframe_uuid: from_uuid,
+        };
+
+        let key_bytes = bincode::encode_to_vec(&key, self.configuration)?;
+
+        let mut opts = ReadOptions::default();
+        opts.set_prefix_same_as_start(true);
+        let iter = self.db.iterator_cf_opt(
+            cf,
+            opts,
+            rocksdb::IteratorMode::From(&key_bytes, Direction::Forward),
+        );
+        let mut keyframes = vec![];
+        for k in iter {
+            let (k, _) = k?;
+            let key: KeyframeKey = bincode::decode_from_slice(&k, self.configuration)?.0;
+            if key.keyframe_uuid > to_uuid {
+                break;
+            }
+            keyframes.push(Uuid::from_u128(key.keyframe_uuid));
+        }
+        Ok(keyframes)
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::store::{gen_properly_filled_frame, Store};
+    use std::ops::Div;
     use savant_core::test::gen_frame;
     use tokio_timerfd::sleep;
+
+    use crate::store::{gen_properly_filled_frame, Store};
+
+    use super::*;
 
     #[tokio::test]
     async fn test_rocksdb_init() -> Result<()> {
@@ -455,6 +508,48 @@ mod tests {
             .await?
             .unwrap();
         assert_eq!(first, 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_keyframes() -> Result<()> {
+        let dir = tempfile::TempDir::new()?;
+        let path = dir.path();
+        let mut db = RocksStore::new(path, Duration::from_secs(60))?;
+        let mut keyframes = vec![];
+        const N: usize = 20;
+        let source = gen_properly_filled_frame().get_source_id();
+        for i in 0..N {
+            let f = gen_properly_filled_frame();
+            db.add_message(&f.to_message(), &[], &[]).await?;
+            keyframes.push(f.get_uuid());
+            if i + 1 == N.div(2) {
+                sleep(Duration::from_secs(2)).await?;
+            }
+        }
+        let first = keyframes[1].get_timestamp().unwrap().to_unix().0;
+        let last = keyframes[N - 2].get_timestamp().unwrap().to_unix().0;
+        let res_keyframes = db.find_keyframes(&source, Some(first), Some(last)).await?;
+        assert_eq!(res_keyframes.len(), N);
+
+        let first = keyframes[N.div(2) + 1]
+            .get_timestamp()
+            .unwrap()
+            .to_unix()
+            .0;
+
+        let res_keyframes = db.find_keyframes(&source, Some(first), None).await?;
+        assert_eq!(res_keyframes.len(), N.div_ceil(2));
+
+        let last = keyframes[N.div(2) - 1]
+            .get_timestamp()
+            .unwrap()
+            .to_unix()
+            .0;
+
+        let res_keyframes = db.find_keyframes(&source, None, Some(last)).await?;
+        assert_eq!(res_keyframes.len(), N.div_ceil(2));
 
         Ok(())
     }

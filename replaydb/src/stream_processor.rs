@@ -9,7 +9,7 @@ use savant_core::transport::zeromq::{
 use tokio::sync::Mutex;
 
 use crate::store::rocksdb::RocksStore;
-use crate::store::{SyncRocksDbStore, Store};
+use crate::store::{Store, SyncRocksDbStore};
 use crate::topic_to_string;
 
 #[derive(Debug)]
