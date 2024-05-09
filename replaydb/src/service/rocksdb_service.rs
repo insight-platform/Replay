@@ -1,12 +1,16 @@
 use crate::job::configuration::JobConfiguration;
 use crate::job::factory::RocksDbJobFactory;
+use crate::job::query::JobQuery;
+use crate::job::stop_condition::JobStopCondition;
 use crate::job::SyncJobStopCondition;
 use crate::service::configuration::{ServiceConfiguration, Storage};
+use crate::service::JobManager;
 use crate::store::rocksdb::RocksDbStore;
 use crate::store::SyncRocksDbStore;
 use crate::stream_processor::RocksDbStreamProcessor;
-use anyhow::Result;
+use anyhow::{bail, Result};
 use hashbrown::HashMap;
+use log::{info, warn};
 use savant_core::transport::zeromq::{NonBlockingReader, NonBlockingWriter};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -15,9 +19,16 @@ use tokio::task::JoinHandle;
 use uuid::Uuid;
 
 pub struct RocksDbService {
-    stream_processor: Arc<Mutex<RocksDbStreamProcessor>>,
+    stream_processor_job_handle: Option<JoinHandle<Result<()>>>,
     job_factory: RocksDbJobFactory,
-    job_map: HashMap<Uuid, (JoinHandle<()>, JobConfiguration, SyncJobStopCondition)>,
+    job_map: HashMap<
+        Uuid,
+        (
+            JoinHandle<Result<()>>,
+            JobConfiguration,
+            Arc<SyncJobStopCondition>,
+        ),
+    >,
 }
 
 impl TryFrom<&ServiceConfiguration> for SyncRocksDbStore {
@@ -59,7 +70,7 @@ impl TryFrom<&ServiceConfiguration> for RocksDbStreamProcessor {
 
 impl RocksDbService {
     pub fn new(config: &ServiceConfiguration) -> Result<Self> {
-        let stream_processor = RocksDbStreamProcessor::try_from(config)?;
+        let mut stream_processor = RocksDbStreamProcessor::try_from(config)?;
         let store = stream_processor.store();
         let job_factory = RocksDbJobFactory::new(
             store,
@@ -67,11 +78,89 @@ impl RocksDbService {
             config.common.job_writer_cache_ttl,
         )?;
 
+        let stream_processor_job_handle =
+            Some(tokio::spawn(async move { stream_processor.run().await }));
+
         Ok(Self {
-            stream_processor: Arc::new(Mutex::new(stream_processor)),
+            stream_processor_job_handle,
             job_factory,
             job_map: HashMap::new(),
         })
+    }
+}
+
+impl JobManager for RocksDbService {
+    async fn add_job(&mut self, job_query: JobQuery) -> Result<()> {
+        let configuration = job_query.configuration.clone();
+        let mut job = self.job_factory.create_job(job_query).await?;
+        let job_id = job.get_id();
+        let stop_condition = job.get_stop_condition_ref();
+        let job_handle = tokio::spawn(async move { job.run_until_complete().await });
+        self.job_map
+            .insert(job_id, (job_handle, configuration, stop_condition));
+        Ok(())
+    }
+
+    fn stop_job(&mut self, job_id: Uuid) -> Result<()> {
+        if let Some((job_handle, _, _)) = self.job_map.remove(&job_id) {
+            job_handle.abort();
+        }
+        Ok(())
+    }
+
+    fn update_stop_condition(
+        &mut self,
+        job_id: Uuid,
+        stop_condition: JobStopCondition,
+    ) -> Result<()> {
+        if let Some((_, _, stop_condition_ref)) = self.job_map.get_mut(&job_id) {
+            let mut sc = stop_condition_ref.0.lock();
+            *sc = stop_condition;
+        }
+        Ok(())
+    }
+
+    fn list_running_jobs(&self) -> Vec<Uuid> {
+        self.job_map.keys().cloned().collect()
+    }
+
+    async fn check_stream_processor_finished(&mut self) -> Result<()> {
+        if self.stream_processor_job_handle.is_none() {
+            bail!("Stream processor job handle is none. No longer functional");
+        }
+
+        if self
+            .stream_processor_job_handle
+            .as_ref()
+            .unwrap()
+            .is_finished()
+        {
+            let sp = self.stream_processor_job_handle.take().unwrap();
+            warn!("Stream processor job is finished. Stopping all jobs");
+            sp.await??;
+            for (uuid, (job_handle, _, _)) in self.job_map.drain() {
+                info!("Stopping job: {}", uuid);
+                job_handle.abort();
+                info!("Job: {} stopped", uuid);
+            }
+        }
+        Ok(())
+    }
+
+    async fn shutdown(&mut self) -> Result<()> {
+        if let Some(sp) = self.stream_processor_job_handle.take() {
+            info!("Stopping stream processor");
+            sp.abort();
+            let _ = sp.await?;
+            info!("Stream processor stopped");
+        }
+        for (uuid, (job_handle, _, _)) in self.job_map.drain() {
+            info!("Stopping job: {}", uuid);
+            job_handle.abort();
+            let _ = job_handle.await?;
+            info!("Job: {} stopped", uuid);
+        }
+        Ok(())
     }
 }
 
@@ -81,8 +170,8 @@ mod tests {
     use crate::service::rocksdb_service::RocksDbService;
     use std::env::set_var;
 
-    #[test]
-    fn test_rocksdb_service() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn test_rocksdb_service() -> anyhow::Result<()> {
         let tmp_dir = tempfile::tempdir().unwrap();
         set_var("DB_PATH", tmp_dir.path().to_str().unwrap());
         set_var("SOCKET_PATH_IN", "in");
@@ -92,8 +181,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_rockdb_serice_opt_writer() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn test_rockdb_service_opt_writer() -> anyhow::Result<()> {
         let tmp_dir = tempfile::tempdir().unwrap();
         set_var("DB_PATH", tmp_dir.path().to_str().unwrap());
         set_var("SOCKET_PATH_IN", "in");

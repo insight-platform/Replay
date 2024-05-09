@@ -9,6 +9,7 @@ use savant_core::primitives::frame_update::VideoFrameUpdate;
 use savant_core::transport::zeromq::WriterResult;
 use serde::{Deserialize, Serialize, Serializer};
 use tokio::sync::Mutex;
+use uuid::Uuid;
 
 use configuration::JobConfiguration;
 use stop_condition::JobStopCondition;
@@ -72,6 +73,10 @@ impl RocksDbJob {
     pub fn get_stop_condition_ref(&self) -> Arc<SyncJobStopCondition> {
         self.0.get_stop_condition_ref()
     }
+
+    pub fn get_id(&self) -> Uuid {
+        Uuid::from_u128(self.0.id)
+    }
 }
 
 #[derive(Serialize)]
@@ -88,7 +93,7 @@ pub(crate) struct Job<S: Store> {
     update: Option<VideoFrameUpdate>,
 }
 
-pub struct SyncJobStopCondition(ParkingLotMutex<JobStopCondition>);
+pub struct SyncJobStopCondition(pub ParkingLotMutex<JobStopCondition>);
 
 impl SyncJobStopCondition {
     pub fn new(stop_condition: JobStopCondition) -> Self {

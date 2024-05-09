@@ -23,6 +23,7 @@ pub enum JobStopCondition {
         #[serde(skip)]
         initial_ts: Option<Instant>,
     },
+    Now,
 }
 
 impl JobStopCondition {
@@ -115,6 +116,7 @@ impl JobStopCondition {
                 }
                 Ok(false)
             }
+            JobStopCondition::Now => Ok(true),
         }
     }
 }
