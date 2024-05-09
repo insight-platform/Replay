@@ -151,14 +151,31 @@ impl JobManager for RocksDbService {
         if let Some(sp) = self.stream_processor_job_handle.take() {
             info!("Stopping stream processor");
             sp.abort();
-            let _ = sp.await?;
+            let _ = sp.await;
             info!("Stream processor stopped");
         }
         for (uuid, (job_handle, _, _)) in self.job_map.drain() {
             info!("Stopping job: {}", uuid);
             job_handle.abort();
-            let _ = job_handle.await?;
+            let _ = job_handle.await;
             info!("Job: {} stopped", uuid);
+        }
+        Ok(())
+    }
+
+    async fn clean_stopped_jobs(&mut self) -> Result<()> {
+        let mut to_remove = vec![];
+        for (uuid, (job_handle, _, _)) in self.job_map.iter() {
+            if job_handle.is_finished() {
+                to_remove.push(*uuid);
+            }
+        }
+        for uuid in to_remove {
+            let (job_handle, _, _) = self.job_map.remove(&uuid).unwrap();
+            let res = job_handle.await?;
+            if let Err(e) = res {
+                warn!("Job: {} failed with error: {}", uuid, e);
+            }
         }
         Ok(())
     }
@@ -168,6 +185,7 @@ impl JobManager for RocksDbService {
 mod tests {
     use crate::service::configuration::ServiceConfiguration;
     use crate::service::rocksdb_service::RocksDbService;
+    use crate::service::JobManager;
     use std::env::set_var;
 
     #[tokio::test]
@@ -177,7 +195,8 @@ mod tests {
         set_var("SOCKET_PATH_IN", "in");
         set_var("SOCKET_PATH_OUT", "out");
         let config = ServiceConfiguration::new("assets/rocksdb.json")?;
-        let _service = RocksDbService::new(&config)?;
+        let mut service = RocksDbService::new(&config)?;
+        service.shutdown().await?;
         Ok(())
     }
 
@@ -187,7 +206,8 @@ mod tests {
         set_var("DB_PATH", tmp_dir.path().to_str().unwrap());
         set_var("SOCKET_PATH_IN", "in");
         let config = ServiceConfiguration::new("assets/rocksdb_opt_out.json")?;
-        let _service = RocksDbService::new(&config)?;
+        let mut service = RocksDbService::new(&config)?;
+        service.shutdown().await?;
         Ok(())
     }
 }

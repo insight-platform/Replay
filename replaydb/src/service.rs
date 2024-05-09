@@ -16,4 +16,5 @@ pub(crate) trait JobManager {
     fn list_running_jobs(&self) -> Vec<Uuid>;
     async fn check_stream_processor_finished(&mut self) -> anyhow::Result<()>;
     async fn shutdown(&mut self) -> anyhow::Result<()>;
+    async fn clean_stopped_jobs(&mut self) -> anyhow::Result<()>;
 }
