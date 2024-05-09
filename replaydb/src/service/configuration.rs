@@ -27,7 +27,7 @@ pub struct SourceConfiguration {
     pub(crate) inflight_ops: usize,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum Storage {
     #[serde(rename = "rocksdb")]
     RocksDB {
@@ -41,17 +41,17 @@ pub struct CommonConfiguration {
     pub(crate) management_port: u16,
     pub(crate) stats_period: Duration,
     pub(crate) pass_metadata_only: bool,
-    pub(crate) job_writer_cache_max_capacity: usize,
+    pub(crate) job_writer_cache_max_capacity: u64,
     pub(crate) job_writer_cache_ttl: Duration,
 }
 
 #[config]
 #[derive(Debug, Serialize)]
 pub struct ServiceConfiguration {
-    common: CommonConfiguration,
-    in_stream: SourceConfiguration,
-    out_stream: Option<SinkConfiguration>,
-    storage: Storage,
+    pub common: CommonConfiguration,
+    pub in_stream: SourceConfiguration,
+    pub out_stream: Option<SinkConfiguration>,
+    pub storage: Storage,
 }
 
 impl ServiceConfiguration {

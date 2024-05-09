@@ -7,13 +7,13 @@
       "nanos": 0
     },
     "job_writer_cache_max_capacity": 1000,
-    "job_writer_cache_expiration_ttl": {
+    "job_writer_cache_ttl": {
       "secs": 60,
       "nanos": 0
     }
   },
   "in_stream": {
-    "url": "router+bind:ipc:///tmp/in",
+    "url": "router+bind:ipc:///tmp/${SOCKET_PATH_IN:-undefined}",
     "receive_timeout": {
       "secs": 1,
       "nanos": 0
@@ -29,7 +29,7 @@
   "out_stream": null,
   "storage": {
     "rocksdb": {
-      "path": "/tmp/rocksdb_out",
+      "path": "${DB_PATH:-/tmp/rocksdb}",
       "data_expiration_ttl": {
         "secs": 3600,
         "nanos": 0

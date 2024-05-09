@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use replaydb::service_configuration::ServiceConfiguration;
+use replaydb::service::configuration::ServiceConfiguration;
 use replaydb::stream_processor::RocksDbStreamProcessor;
 use std::env::args;
 

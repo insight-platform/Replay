@@ -70,14 +70,14 @@ struct KeyframeValue {
     pub(crate) ts: u128,
 }
 
-pub struct RocksStore {
+pub struct RocksDbStore {
     db: DB,
     source_id_hashes: HashMap<String, [u8; 16]>,
     resident_index_values: HashMap<String, usize>,
     configuration: Configuration<BigEndian>,
 }
 
-impl RocksStore {
+impl RocksDbStore {
     fn get_source_hash(&mut self, source_id: &str) -> Result<[u8; 16]> {
         if let Some(hash) = self.source_id_hashes.get(source_id) {
             return Ok(*hash);
@@ -165,7 +165,7 @@ impl RocksStore {
     }
 }
 
-impl super::Store for RocksStore {
+impl super::Store for RocksDbStore {
     async fn add_message(
         &mut self,
         message: &Message,
@@ -409,7 +409,7 @@ mod tests {
     async fn test_rocksdb_init() -> Result<()> {
         let dir = tempfile::TempDir::new()?;
         let path = dir.path();
-        let mut db = RocksStore::new(path, Duration::from_secs(60))?;
+        let mut db = RocksDbStore::new(path, Duration::from_secs(60))?;
 
         let source_id1 = "test_source_id-1";
         let source_id2 = "test_source_id-2";
@@ -427,7 +427,7 @@ mod tests {
         let disk_size = db.disk_size(path)?;
         assert!(disk_size > 0);
 
-        let _ = RocksStore::remove_db(path);
+        let _ = RocksDbStore::remove_db(path);
         Ok(())
     }
 
@@ -438,7 +438,7 @@ mod tests {
         let frame = gen_frame();
         let source_id = frame.get_source_id();
         {
-            let mut db = RocksStore::new(path, Duration::from_secs(60))?;
+            let mut db = RocksDbStore::new(path, Duration::from_secs(60))?;
             let m = frame.to_message();
             let id = db.add_message(&m, &[], &[]).await?;
             let (m2, _, _) = db.get_message(&source_id, id).await?.unwrap();
@@ -448,13 +448,13 @@ mod tests {
             );
         }
         {
-            let mut db = RocksStore::new(path, Duration::from_secs(60))?;
+            let mut db = RocksDbStore::new(path, Duration::from_secs(60))?;
             let (_, _, _) = db.get_message(&source_id, 0).await?.unwrap();
             assert_eq!(db.current_index_value(&source_id)?, 1);
             let m = db.get_message(&source_id, 1).await?;
             assert!(m.is_none());
         }
-        let _ = RocksStore::remove_db(path);
+        let _ = RocksDbStore::remove_db(path);
         Ok(())
     }
 
@@ -462,7 +462,7 @@ mod tests {
     async fn test_find_first_block_in_blocks() -> Result<()> {
         let dir = tempfile::TempDir::new()?;
         let path = dir.path();
-        let mut db = RocksStore::new(path, Duration::from_secs(60))?;
+        let mut db = RocksDbStore::new(path, Duration::from_secs(60))?;
         let f = gen_properly_filled_frame();
         let source_id = f.get_source_id();
         db.add_message(&f.to_message(), &[], &[]).await?;
@@ -489,7 +489,7 @@ mod tests {
     async fn test_find_first_block_in_duration() -> Result<()> {
         let dir = tempfile::TempDir::new()?;
         let path = dir.path();
-        let mut db = RocksStore::new(path, Duration::from_secs(60))?;
+        let mut db = RocksDbStore::new(path, Duration::from_secs(60))?;
         let f = gen_properly_filled_frame();
         let source_id = f.get_source_id();
         db.add_message(&f.to_message(), &[], &[]).await?;
@@ -520,7 +520,7 @@ mod tests {
     async fn test_keyframes() -> Result<()> {
         let dir = tempfile::TempDir::new()?;
         let path = dir.path();
-        let mut db = RocksStore::new(path, Duration::from_secs(60))?;
+        let mut db = RocksDbStore::new(path, Duration::from_secs(60))?;
         let mut keyframes = vec![];
         const N: usize = 20;
         let source = gen_properly_filled_frame().get_source_id();
@@ -534,7 +534,9 @@ mod tests {
         }
         let first = keyframes[1].get_timestamp().unwrap().to_unix().0;
         let last = keyframes[N - 2].get_timestamp().unwrap().to_unix().0;
-        let res_keyframes = db.find_keyframes(&source, Some(first), Some(last), N).await?;
+        let res_keyframes = db
+            .find_keyframes(&source, Some(first), Some(last), N)
+            .await?;
         assert_eq!(res_keyframes.len(), N);
 
         let first = keyframes[N.div(2) + 1].get_timestamp().unwrap().to_unix().0;

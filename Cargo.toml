@@ -7,17 +7,16 @@ members = [
 
 [workspace.dependencies]
 anyhow = "1"
-uuid = { version = "1", features = ["v7"] }
+derive_builder = "0.20"
+env_logger = "0.11"
 hashbrown = "0.14"
 log = "0.4"
-env_logger = "0.11"
+parking_lot = "0.12"
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tokio-timerfd = "0.2"
-derive_builder = "0.20"
-parking_lot = "0.12"
-
+uuid = { version = "1", features = ["v7"] }
 
 [workspace.package]
 version = "0.1.0"

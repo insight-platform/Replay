@@ -5,7 +5,7 @@ use uuid::{NoContext, Timestamp, Uuid};
 
 pub mod job;
 pub mod job_writer;
-pub mod service_configuration;
+pub mod service;
 pub mod store;
 pub mod stream_processor;
 

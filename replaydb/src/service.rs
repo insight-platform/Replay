@@ -1,28 +1,22 @@
 use crate::job::configuration::JobConfiguration;
-use crate::job::factory::RocksDbJobFactory;
 use crate::job::stop_condition::JobStopCondition;
 use crate::job::SyncJobStopCondition;
-use anyhow::Result;
-use hashbrown::HashMap;
-use tokio::task::JoinHandle;
 use uuid::Uuid;
+
+pub mod configuration;
+pub mod rocksdb_service;
 
 trait JobRepository {
     fn add_job(
         &mut self,
         job: JobConfiguration,
         stop_condition: SyncJobStopCondition,
-    ) -> Result<()>;
-    fn stop_job(&mut self, job_id: Uuid) -> Result<()>;
+    ) -> anyhow::Result<()>;
+    fn stop_job(&mut self, job_id: Uuid) -> anyhow::Result<()>;
     fn update_stop_condition(
         &mut self,
         job_id: Uuid,
         stop_condition: JobStopCondition,
-    ) -> Result<()>;
+    ) -> anyhow::Result<()>;
     fn list_running_jobs(&self) -> Vec<Uuid>;
-}
-
-pub struct RocksDBJobRepository {
-    factory: RocksDbJobFactory,
-    job_map: HashMap<Uuid, (JoinHandle<()>, JobConfiguration, SyncJobStopCondition)>,
 }

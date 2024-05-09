@@ -32,7 +32,7 @@ pub enum JobOffset {
     Seconds(f64),
 }
 
-pub type SyncRocksDbStore = Arc<Mutex<rocksdb::RocksStore>>;
+pub type SyncRocksDbStore = Arc<Mutex<rocksdb::RocksDbStore>>;
 
 pub(crate) trait Store {
     async fn add_message(

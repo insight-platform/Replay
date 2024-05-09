@@ -14,14 +14,13 @@ use configuration::JobConfiguration;
 use stop_condition::JobStopCondition;
 
 use crate::job_writer::JobWriter;
-use crate::store::rocksdb::RocksStore;
+use crate::store::rocksdb::RocksDbStore;
 use crate::store::Store;
 use crate::ParkingLotMutex;
 
 pub mod configuration;
 pub mod factory;
 pub mod query;
-pub mod repository;
 pub mod stop_condition;
 
 const STD_FPS: f64 = 30.0;
@@ -39,11 +38,11 @@ pub enum SendEither<'a> {
     EOS,
 }
 
-pub struct RocksDbJob(Job<RocksStore>);
+pub struct RocksDbJob(Job<RocksDbStore>);
 
 impl RocksDbJob {
     pub fn new(
-        store: Arc<Mutex<RocksStore>>,
+        store: Arc<Mutex<RocksDbStore>>,
         writer: Arc<Mutex<JobWriter>>,
         id: u128,
         position: usize,

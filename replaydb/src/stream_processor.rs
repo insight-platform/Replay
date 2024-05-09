@@ -8,7 +8,7 @@ use savant_core::transport::zeromq::{
 };
 use tokio::sync::Mutex;
 
-use crate::store::rocksdb::RocksStore;
+use crate::store::rocksdb::RocksDbStore;
 use crate::store::{Store, SyncRocksDbStore};
 use crate::topic_to_string;
 
@@ -26,6 +26,7 @@ struct StreamProcessor<T: Store> {
     last_stats: Instant,
     stats_period: Duration,
     send_metadata_only: bool,
+    stop_flag: bool,
 }
 
 impl<T> StreamProcessor<T>
@@ -50,6 +51,7 @@ where
             stats_period,
             last_stats: Instant::now(),
             send_metadata_only,
+            stop_flag: false,
         }
     }
 
@@ -213,12 +215,19 @@ where
 
     pub async fn run(&mut self) -> Result<()> {
         loop {
+            if self.stop_flag {
+                return Ok(());
+            }
             self.run_once().await?
         }
     }
+
+    pub fn stop(&mut self) {
+        self.stop_flag = true;
+    }
 }
 
-pub struct RocksDbStreamProcessor(StreamProcessor<RocksStore>);
+pub struct RocksDbStreamProcessor(StreamProcessor<RocksDbStore>);
 
 impl RocksDbStreamProcessor {
     pub fn new(
@@ -244,6 +253,14 @@ impl RocksDbStreamProcessor {
     pub async fn run(&mut self) -> Result<()> {
         self.0.run().await
     }
+
+    pub fn stop(&mut self) {
+        self.0.stop();
+    }
+
+    pub fn store(&self) -> Arc<Mutex<RocksDbStore>> {
+        self.0.db.clone()
+    }
 }
 
 #[cfg(test)]
@@ -257,7 +274,7 @@ mod tests {
     };
     use tokio::sync::Mutex;
 
-    use crate::store::rocksdb::RocksStore;
+    use crate::store::rocksdb::RocksDbStore;
     use crate::store::{gen_properly_filled_frame, Store};
     use crate::stream_processor::StreamProcessor;
 
@@ -265,7 +282,7 @@ mod tests {
     async fn test_stream_processor() -> Result<()> {
         let dir = tempfile::TempDir::new()?;
         let path = dir.path();
-        let db = RocksStore::new(path, Duration::from_secs(60))?;
+        let db = RocksDbStore::new(path, Duration::from_secs(60))?;
 
         let mut in_reader = NonBlockingReader::new(
             &ReaderConfig::new()

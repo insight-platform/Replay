@@ -7,7 +7,7 @@
       "nanos": 0
     },
     "job_writer_cache_max_capacity": 1000,
-    "job_writer_cache_expiration_ttl": {
+    "job_writer_cache_ttl": {
       "secs": 60,
       "nanos": 0
     }
@@ -44,7 +44,7 @@
   },
   "storage": {
     "rocksdb": {
-      "path": "/tmp/rocksdb",
+      "path": "${DB_PATH:-/tmp/rocksdb}",
       "data_expiration_ttl": {
         "secs": 3600,
         "nanos": 0

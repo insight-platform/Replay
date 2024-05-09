@@ -21,11 +21,11 @@ name = "replay-cloud"
 path = "src/cloud/cloud.rs"
 
 [dependencies]
-replaydb = { path = "../replaydb" }
 anyhow = { workspace = true }
 env_logger = { workspace = true }
 hashbrown = { workspace = true }
 log = { workspace = true }
 parking_lot = { workspace = true }
+replaydb = { path = "../replaydb" }
 tokio = { workspace = true }
 tokio-timerfd = { workspace = true }

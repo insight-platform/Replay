@@ -13,11 +13,12 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-savant_core = { git = "https://github.com/insight-platform/savant-rs", tag = "0.2.27" }
 bincode = { version = "2.0.0-rc.3" }
-rocksdb = { version = "0.22" }
 md-5 = "0.10"
 mini-moka = "0.10"
+ring = "0.17"
+rocksdb = { version = "0.22" }
+savant_core = { git = "https://github.com/insight-platform/savant-rs", tag = "0.2.27" }
 twelf = { version = "0.15", features = ["json", "env", "shellexpand"], default-features = false }
 
 anyhow = { workspace = true }
@@ -26,12 +27,11 @@ env_logger = { workspace = true }
 hashbrown = { workspace = true }
 log = { workspace = true }
 uuid = { workspace = true }
+parking_lot = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-parking_lot = { workspace = true }
 tokio = { workspace = true }
 tokio-timerfd = { workspace = true }
-
 
 [dev-dependencies]
 tempfile = "3.10"

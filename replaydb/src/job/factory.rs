@@ -1,8 +1,8 @@
 use crate::job::query::JobQuery;
 use crate::job::{Job, RocksDbJob};
 use crate::job_writer::cache::JobWriterCache;
-use crate::store::rocksdb::RocksStore;
-use crate::store::Store;
+use crate::store::rocksdb::RocksDbStore;
+use crate::store::{Store, SyncRocksDbStore};
 use anyhow::Result;
 use savant_core::primitives::frame_update::VideoFrameUpdate;
 use savant_core::utils::uuid_v7::incremental_uuid_v7;
@@ -11,11 +11,11 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 
-pub struct RocksDbJobFactory(JobFactory<RocksStore>);
+pub struct RocksDbJobFactory(JobFactory<RocksDbStore>);
 
 impl RocksDbJobFactory {
     pub fn new(
-        store: Arc<Mutex<RocksStore>>,
+        store: SyncRocksDbStore,
         writer_cache_max_capacity: NonZeroU64,
         writer_cache_ttl: Duration,
     ) -> Result<Self> {
@@ -26,7 +26,7 @@ impl RocksDbJobFactory {
         )))
     }
 
-    pub fn store(&self) -> Arc<Mutex<RocksStore>> {
+    pub fn store(&self) -> SyncRocksDbStore {
         self.0.store.clone()
     }
 
@@ -101,7 +101,7 @@ mod tests {
     use crate::job::query::JobQuery;
     use crate::job::stop_condition::JobStopCondition;
     use crate::job_writer::SinkConfiguration;
-    use crate::store::rocksdb::RocksStore;
+    use crate::store::rocksdb::RocksDbStore;
     use crate::store::{gen_properly_filled_frame, JobOffset, Store};
     use anyhow::Result;
     use savant_core::primitives::attribute_value::AttributeValue;
@@ -114,7 +114,10 @@ mod tests {
     async fn test_create_rocksdb_job() -> Result<()> {
         let dir = tempfile::TempDir::new()?;
         let path = dir.path();
-        let store = Arc::new(Mutex::new(RocksStore::new(path, Duration::from_secs(60))?));
+        let store = Arc::new(Mutex::new(RocksDbStore::new(
+            path,
+            Duration::from_secs(60),
+        )?));
 
         let mut factory =
             RocksDbJobFactory::new(store.clone(), 1024u64.try_into()?, Duration::from_secs(30))?;
