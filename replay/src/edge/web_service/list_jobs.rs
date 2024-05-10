@@ -29,7 +29,7 @@ impl Responder for Response {
     }
 }
 
-#[get("/jobs/list")]
+#[get("/job/list")]
 async fn list_jobs(js: web::Data<JobService>, q: web::Query<JobFilter>) -> impl Responder {
     let mut js_bind = js.service.lock().await;
 
