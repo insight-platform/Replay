@@ -2,10 +2,16 @@ use crate::web_service::JobService;
 use actix_web::body::BoxBody;
 use actix_web::http::header::ContentType;
 use actix_web::{get, web, HttpResponse, Responder};
+use log::info;
 use replaydb::job::configuration::JobConfiguration;
 use replaydb::job::stop_condition::JobStopCondition;
 use replaydb::service::JobManager;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+
+#[derive(Deserialize)]
+struct JobFilter {
+    job: Option<String>,
+}
 
 #[derive(Debug, Serialize)]
 enum Response {
@@ -24,7 +30,7 @@ impl Responder for Response {
 }
 
 #[get("/jobs/list")]
-async fn list_jobs(js: web::Data<JobService>) -> impl Responder {
+async fn list_jobs(js: web::Data<JobService>, q: web::Query<JobFilter>) -> impl Responder {
     let mut js_bind = js.service.lock().await;
 
     let cleanup = js_bind.clean_stopped_jobs().await;
@@ -36,6 +42,15 @@ async fn list_jobs(js: web::Data<JobService>) -> impl Responder {
         .list_running_jobs()
         .into_iter()
         .map(|(uuid, c, s)| (uuid.to_string(), c, s))
-        .collect();
+        .collect::<Vec<_>>();
+    let jobs = if let Some(job) = &q.job {
+        info!("Listing job: {}", job);
+        jobs.into_iter()
+            .filter(|(uuid, _, _)| uuid == job)
+            .collect()
+    } else {
+        info!("Listing all currently running jobs");
+        jobs
+    };
     Response::Ok(jobs)
 }
