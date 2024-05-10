@@ -124,7 +124,7 @@ impl JobManager for RocksDbService {
         self.job_map.keys().cloned().collect()
     }
 
-    async fn check_stream_processor_finished(&mut self) -> Result<()> {
+    async fn check_stream_processor_finished(&mut self) -> Result<bool> {
         if self.stream_processor_job_handle.is_none() {
             bail!("Stream processor job handle is none. No longer functional");
         }
@@ -143,8 +143,9 @@ impl JobManager for RocksDbService {
                 job_handle.abort();
                 info!("Job: {} stopped", uuid);
             }
+            return Ok(true);
         }
-        Ok(())
+        Ok(false)
     }
 
     async fn shutdown(&mut self) -> Result<()> {

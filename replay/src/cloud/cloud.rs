@@ -1,6 +1,5 @@
 use anyhow::{anyhow, Result};
-use replaydb::service_configuration::ServiceConfiguration;
-use replaydb::stream_processor::RocksDbStreamProcessor;
+use replaydb::service::configuration::ServiceConfiguration;
 use std::env::args;
 
 #[tokio::main]

@@ -29,3 +29,7 @@ parking_lot = { workspace = true }
 replaydb = { path = "../replaydb" }
 tokio = { workspace = true }
 tokio-timerfd = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+actix-web = "4"

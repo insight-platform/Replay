@@ -93,6 +93,8 @@ impl TryFrom<&SourceConfiguration> for NonBlockingReader {
             .with_routing_cache_size(source_conf.source_cache_size)?
             .with_fix_ipc_permissions(source_conf.fix_ipc_permissions)?
             .build()?;
-        NonBlockingReader::new(&conf, source_conf.inflight_ops)
+        let mut reader = NonBlockingReader::new(&conf, source_conf.inflight_ops)?;
+        reader.start()?;
+        Ok(reader)
     }
 }
