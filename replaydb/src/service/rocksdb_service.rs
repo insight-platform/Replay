@@ -6,7 +6,7 @@ use crate::job::SyncJobStopCondition;
 use crate::service::configuration::{ServiceConfiguration, Storage};
 use crate::service::JobManager;
 use crate::store::rocksdb::RocksDbStore;
-use crate::store::SyncRocksDbStore;
+use crate::store::{Store, SyncRocksDbStore};
 use crate::stream_processor::RocksDbStreamProcessor;
 use anyhow::{bail, Result};
 use hashbrown::HashMap;
@@ -19,6 +19,7 @@ use tokio::task::JoinHandle;
 use uuid::Uuid;
 
 pub struct RocksDbService {
+    store: SyncRocksDbStore,
     stream_processor_job_handle: Option<JoinHandle<Result<()>>>,
     job_factory: RocksDbJobFactory,
     job_map: HashMap<
@@ -72,6 +73,7 @@ impl RocksDbService {
     pub fn new(config: &ServiceConfiguration) -> Result<Self> {
         let mut stream_processor = RocksDbStreamProcessor::try_from(config)?;
         let store = stream_processor.store();
+        let local_store_ref = store.clone();
         let job_factory = RocksDbJobFactory::new(
             store,
             config.common.job_writer_cache_max_capacity.try_into()?,
@@ -82,10 +84,22 @@ impl RocksDbService {
             Some(tokio::spawn(async move { stream_processor.run().await }));
 
         Ok(Self {
+            store: local_store_ref,
             stream_processor_job_handle,
             job_factory,
             job_map: HashMap::new(),
         })
+    }
+
+    pub async fn find_keyframes(
+        &mut self,
+        source_id: &str,
+        from: Option<u64>,
+        to: Option<u64>,
+        limit: usize,
+    ) -> Result<Vec<Uuid>> {
+        let mut store = self.store.lock().await;
+        store.find_keyframes(source_id, from, to, limit).await
     }
 }
 

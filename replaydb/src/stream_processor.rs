@@ -68,7 +68,7 @@ where
             }
             let message = self.input.try_receive();
             if message.is_none() {
-                log::debug!(
+                log::trace!(
                     target: "replay::db::stream_processor::receive_message",
                     "No message received, sleeping for 1ms."
                 );

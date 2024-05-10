@@ -1,5 +1,6 @@
 mod web_service;
 
+use crate::web_service::find_keyframes::find_keyframes;
 use crate::web_service::shutdown::shutdown;
 use crate::web_service::status::status;
 use crate::web_service::JobService;
@@ -35,6 +36,7 @@ async fn main() -> Result<()> {
                 .app_data(http_job_service.clone())
                 .service(status)
                 .service(shutdown)
+                .service(find_keyframes)
         })
         .bind(("127.0.0.1", 8080))?
         .run(),
