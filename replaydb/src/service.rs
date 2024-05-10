@@ -1,3 +1,4 @@
+use crate::job::configuration::JobConfiguration;
 use crate::job::query::JobQuery;
 use crate::job::stop_condition::JobStopCondition;
 use std::future::Future;
@@ -14,7 +15,7 @@ pub trait JobManager {
         job_id: Uuid,
         stop_condition: JobStopCondition,
     ) -> anyhow::Result<()>;
-    fn list_running_jobs(&self) -> Vec<Uuid>;
+    fn list_running_jobs(&self) -> Vec<(Uuid, JobConfiguration, JobStopCondition)>;
     fn check_stream_processor_finished(
         &mut self,
     ) -> impl Future<Output = anyhow::Result<bool>> + Send;

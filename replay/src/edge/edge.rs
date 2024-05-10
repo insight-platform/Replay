@@ -1,6 +1,7 @@
 mod web_service;
 
 use crate::web_service::find_keyframes::find_keyframes;
+use crate::web_service::list_jobs::list_jobs;
 use crate::web_service::shutdown::shutdown;
 use crate::web_service::status::status;
 use crate::web_service::JobService;
@@ -37,6 +38,7 @@ async fn main() -> Result<()> {
                 .service(status)
                 .service(shutdown)
                 .service(find_keyframes)
+                .service(list_jobs)
         })
         .bind(("127.0.0.1", 8080))?
         .run(),
@@ -52,6 +54,11 @@ async fn main() -> Result<()> {
 
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+        let mut job_service_bind = job_service.service.lock().await;
+        job_service_bind.clean_stopped_jobs().await?;
+        drop(job_service_bind);
+
         if *job_service.shutdown.lock().await {
             job.abort();
             let _ = job.await;

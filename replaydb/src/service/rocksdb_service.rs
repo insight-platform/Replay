@@ -134,8 +134,11 @@ impl JobManager for RocksDbService {
         Ok(())
     }
 
-    fn list_running_jobs(&self) -> Vec<Uuid> {
-        self.job_map.keys().cloned().collect()
+    fn list_running_jobs(&self) -> Vec<(Uuid, JobConfiguration, JobStopCondition)> {
+        self.job_map
+            .iter()
+            .map(|(uuid, (_, c, s))| (*uuid, c.clone(), s.0.lock().clone()))
+            .collect()
     }
 
     async fn check_stream_processor_finished(&mut self) -> Result<bool> {

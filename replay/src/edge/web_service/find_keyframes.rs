@@ -29,7 +29,7 @@ struct FindKeyframesQuery {
     limit: usize,
 }
 
-#[post("/find_keyframes")]
+#[post("/keyframes/find")]
 async fn find_keyframes(
     js: web::Data<JobService>,
     query: web::Json<FindKeyframesQuery>,
