@@ -1,3 +1,5 @@
+Business Source License 1.1
+
 License text copyright (c) 2020 MariaDB Corporation Ab, All Rights Reserved.
 "Business Source License" is a trademark of MariaDB Corporation Ab.
 
@@ -7,7 +9,7 @@ Licensor:             BwSoft Management, LLC.
 Licensed Work:        Replay 0.1.0 or later. The Licensed Work is (c) 2024
                       BwSoft Management, LLC.
 Change Date:          Four years from the date the Licensed Work is published.
-Change License:       MPL 2.0
+Change License:       Apache License, Version 2.0
 
 For information about alternative licensing arrangements for the Licensed Work,
 please contact info@bw-sw.com.
