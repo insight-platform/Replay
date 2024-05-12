@@ -27,6 +27,8 @@ enum ResponseMessage {
     Ok,
     #[serde(rename = "jobs")]
     ListJobs(Vec<(String, JobConfiguration, JobStopCondition)>),
+    #[serde(rename = "stopped_jobs")]
+    ListStoppedJobs(Vec<(String, Option<String>)>),
     #[serde(rename = "new_job")]
     NewJob(String),
     #[serde(rename = "keyframes")]

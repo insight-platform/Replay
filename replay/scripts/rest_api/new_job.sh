@@ -53,7 +53,7 @@ cat <<EOF
     "send_metadata_only": false
   },
   "stop_condition": {
-    "frame_count": 10000
+    "frame_count": 100
   },
   "anchor_keyframe": "$ANCHOR_KEYFRAME",
   "offset": {

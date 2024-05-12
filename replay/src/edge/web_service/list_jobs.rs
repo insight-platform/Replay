@@ -36,7 +36,7 @@ async fn list_jobs_int(js: web::Data<JobService>, q: JobFilter) -> impl Responde
     }
 
     let jobs = js_bind
-        .list_running_jobs()
+        .list_jobs()
         .into_iter()
         .map(|(uuid, c, s)| (uuid.to_string(), c, s))
         .collect::<Vec<_>>();
@@ -50,4 +50,21 @@ async fn list_jobs_int(js: web::Data<JobService>, q: JobFilter) -> impl Responde
         jobs
     };
     ResponseMessage::ListJobs(jobs)
+}
+
+#[get("/job/stopped")]
+async fn list_stopped_jobs(js: web::Data<JobService>) -> impl Responder {
+    let mut js_bind = js.service.lock().await;
+
+    let cleanup = js_bind.clean_stopped_jobs().await;
+    if let Err(e) = cleanup {
+        return ResponseMessage::Error(e.to_string());
+    }
+
+    let stopped_jobs = js_bind
+        .list_stopped_jobs()
+        .into_iter()
+        .map(|(uuid, res)| (uuid.to_string(), res))
+        .collect::<Vec<_>>();
+    ResponseMessage::ListStoppedJobs(stopped_jobs)
 }

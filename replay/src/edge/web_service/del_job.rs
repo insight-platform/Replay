@@ -23,7 +23,7 @@ async fn delete_job(js: web::Data<JobService>, q: web::Path<String>) -> impl Res
         return ResponseMessage::Error(e.to_string());
     }
 
-    let res = js_bind.stop_job(job_uuid);
+    let res = js_bind.stop_job(job_uuid).await;
     match res {
         Ok(_) => ResponseMessage::Ok,
         Err(e) => {

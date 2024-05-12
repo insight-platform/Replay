@@ -11,7 +11,7 @@ use replaydb::service::JobManager;
 
 use crate::web_service::del_job::delete_job;
 use crate::web_service::find_keyframes::find_keyframes;
-use crate::web_service::list_jobs::{list_job, list_jobs};
+use crate::web_service::list_jobs::{list_job, list_jobs, list_stopped_jobs};
 use crate::web_service::new_job::new_job;
 use crate::web_service::shutdown::shutdown;
 use crate::web_service::status::status;
@@ -25,7 +25,7 @@ async fn main() -> Result<()> {
     println!("--------------------------------------------------");
     println!("                Replay Edge Service               ");
     println!("GitHub: https://github.com/insight-platform/Replay");
-    println!("This program is licensed under the BSL=1.1 license");
+    println!("This program is licensed under the BSL-1.1 license");
     println!("   For more information, see the LICENSE file     ");
     println!("        (c) 2024 BwSoft Management, LLC           ");
     println!("--------------------------------------------------");
@@ -53,6 +53,7 @@ async fn main() -> Result<()> {
                 .service(status)
                 .service(shutdown)
                 .service(find_keyframes)
+                .service(list_stopped_jobs)
                 .service(list_job)
                 .service(list_jobs)
                 .service(delete_job)

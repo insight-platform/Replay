@@ -43,6 +43,7 @@ pub struct CommonConfiguration {
     pub pass_metadata_only: bool,
     pub job_writer_cache_max_capacity: u64,
     pub job_writer_cache_ttl: Duration,
+    pub job_eviction_ttl: Duration,
 }
 
 #[config]
