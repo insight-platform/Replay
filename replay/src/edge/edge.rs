@@ -11,7 +11,7 @@ use replaydb::service::JobManager;
 
 use crate::web_service::del_job::delete_job;
 use crate::web_service::find_keyframes::find_keyframes;
-use crate::web_service::list_jobs::list_jobs;
+use crate::web_service::list_jobs::{list_job, list_jobs};
 use crate::web_service::new_job::new_job;
 use crate::web_service::shutdown::shutdown;
 use crate::web_service::status::status;
@@ -43,6 +43,7 @@ async fn main() -> Result<()> {
                 .service(status)
                 .service(shutdown)
                 .service(find_keyframes)
+                .service(list_job)
                 .service(list_jobs)
                 .service(delete_job)
                 .service(new_job);

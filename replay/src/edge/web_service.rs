@@ -22,12 +22,19 @@ pub struct JobService {
 
 #[derive(Debug, Serialize)]
 enum ResponseMessage {
+    #[serde(rename = "ok")]
     Ok,
+    #[serde(rename = "jobs")]
     ListJobs(Vec<(String, JobConfiguration, JobStopCondition)>),
+    #[serde(rename = "new_job")]
     NewJob(String),
+    #[serde(rename = "keyframes")]
     FindKeyframes(String, Vec<String>),
+    #[serde(rename = "running")]
     StatusRunning,
+    #[serde(rename = "finished")]
     StatusFinished,
+    #[serde(rename = "error")]
     Error(String),
 }
 

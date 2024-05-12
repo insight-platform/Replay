@@ -11,8 +11,23 @@ struct JobFilter {
     job: Option<String>,
 }
 
+#[get("/job/{job}")]
+async fn list_job(js: web::Data<JobService>, q: web::Path<String>) -> impl Responder {
+    list_jobs_int(
+        js,
+        JobFilter {
+            job: Some(q.into_inner()),
+        },
+    )
+    .await
+}
+
 #[get("/job")]
 async fn list_jobs(js: web::Data<JobService>, q: web::Query<JobFilter>) -> impl Responder {
+    list_jobs_int(js, q.into_inner()).await
+}
+
+async fn list_jobs_int(js: web::Data<JobService>, q: JobFilter) -> impl Responder {
     let mut js_bind = js.service.lock().await;
 
     let cleanup = js_bind.clean_stopped_jobs().await;
