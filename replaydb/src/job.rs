@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Result};
+use log::debug;
 use savant_core::message::Message;
 use savant_core::primitives::frame_update::VideoFrameUpdate;
 use savant_core::transport::zeromq::WriterResult;
@@ -251,7 +252,7 @@ where
         let pts = message.get_pts();
         let last_pts = self.last_pts.unwrap();
         self.last_pts = Some(pts);
-
+        debug!("PTS: {} - Last PTS: {} = {}", pts, last_pts, pts - last_pts);
         if pts < last_pts {
             let message = format!(
                 "PTS discrepancy detected in job {}: {} < {}!",

@@ -33,11 +33,11 @@ cat <<EOF
     },
     "min_duration": {
       "secs": 0,
-      "nanos": 10000000
+      "nanos": 60000000
     },
     "max_duration": {
       "secs": 0,
-      "nanos": 33333333
+      "nanos": 103333333
     },
     "stored_source_id": "video",
     "resulting_source_id": "vod-video-1",
@@ -53,7 +53,7 @@ cat <<EOF
     "send_metadata_only": false
   },
   "stop_condition": {
-    "frame_count": 1000
+    "frame_count": 10000
   },
   "anchor_keyframe": "$ANCHOR_KEYFRAME",
   "offset": {
