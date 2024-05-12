@@ -30,6 +30,8 @@ pub enum JobStopCondition {
     },
     #[serde(rename = "now")]
     Now,
+    #[serde(rename = "never")]
+    Never,
 }
 
 impl JobStopCondition {
@@ -123,6 +125,7 @@ impl JobStopCondition {
                 Ok(false)
             }
             JobStopCondition::Now => Ok(true),
+            JobStopCondition::Never => Ok(false),
         }
     }
 }

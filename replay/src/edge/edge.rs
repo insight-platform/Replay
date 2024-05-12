@@ -43,6 +43,7 @@ async fn main() -> Result<()> {
         service: Mutex::new(rocksdb_service),
         shutdown: Mutex::new(false),
     });
+    let port = conf.common.management_port;
 
     let http_job_service = job_service.clone();
     let job = tokio::spawn(
@@ -60,7 +61,7 @@ async fn main() -> Result<()> {
 
             App::new().service(scope)
         })
-        .bind(("127.0.0.1", 8080))?
+        .bind(("127.0.0.1", port))?
         .run(),
     );
 

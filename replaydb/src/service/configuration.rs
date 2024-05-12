@@ -38,11 +38,11 @@ pub enum Storage {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CommonConfiguration {
-    pub(crate) management_port: u16,
-    pub(crate) stats_period: Duration,
-    pub(crate) pass_metadata_only: bool,
-    pub(crate) job_writer_cache_max_capacity: u64,
-    pub(crate) job_writer_cache_ttl: Duration,
+    pub management_port: u16,
+    pub stats_period: Duration,
+    pub pass_metadata_only: bool,
+    pub job_writer_cache_max_capacity: u64,
+    pub job_writer_cache_ttl: Duration,
 }
 
 #[config]
