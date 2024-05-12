@@ -65,6 +65,11 @@ async fn main() -> Result<()> {
         .run(),
     );
 
+    info!(
+        "HTTP server started on port {}, API is available under the '/api/v1/' prefix.",
+        port
+    );
+
     let signal_job_service = job_service.clone();
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.unwrap();
