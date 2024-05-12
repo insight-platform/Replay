@@ -20,6 +20,7 @@ use crate::store::rocksdb::RocksDbStore;
 use crate::store::{Store, SyncRocksDbStore};
 use crate::stream_processor::RocksDbStreamProcessor;
 
+#[allow(clippy::type_complexity)]
 pub struct RocksDbService {
     store: SyncRocksDbStore,
     stream_processor_job_handle: Option<JoinHandle<Result<()>>>,

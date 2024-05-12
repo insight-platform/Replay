@@ -370,7 +370,7 @@ impl super::Store for RocksDbStore {
             keyframe_uuid: from_uuid,
         };
 
-        let key_bytes = bincode::encode_to_vec(&key, self.configuration)?;
+        let key_bytes = bincode::encode_to_vec(key, self.configuration)?;
 
         let mut opts = ReadOptions::default();
         opts.set_prefix_same_as_start(true);
