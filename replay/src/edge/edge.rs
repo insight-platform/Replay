@@ -25,7 +25,7 @@ async fn main() -> Result<()> {
     println!("--------------------------------------------------");
     println!("                Replay Edge Service               ");
     println!("GitHub: https://github.com/insight-platform/Replay");
-    println!("This program is licensed under the BSL1.1 license ");
+    println!("This program is licensed under the BSL=1.1 license");
     println!("   For more information, see the LICENSE file     ");
     println!("        (c) 2024 BwSoft Management, LLC           ");
     println!("--------------------------------------------------");
