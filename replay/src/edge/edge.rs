@@ -1,18 +1,22 @@
-mod web_service;
+use std::env::args;
 
+use actix_web::{App, HttpServer, web};
+use anyhow::{anyhow, Result};
+use log::{debug, info};
+use tokio::sync::Mutex;
+
+use replaydb::service::configuration::ServiceConfiguration;
+use replaydb::service::JobManager;
+use replaydb::service::rocksdb_service::RocksDbService;
+
+use crate::web_service::del_job::delete_job;
 use crate::web_service::find_keyframes::find_keyframes;
+use crate::web_service::JobService;
 use crate::web_service::list_jobs::list_jobs;
 use crate::web_service::shutdown::shutdown;
 use crate::web_service::status::status;
-use crate::web_service::JobService;
-use actix_web::{web, App, HttpServer};
-use anyhow::{anyhow, Result};
-use log::{debug, info};
-use replaydb::service::configuration::ServiceConfiguration;
-use replaydb::service::rocksdb_service::RocksDbService;
-use replaydb::service::JobManager;
-use std::env::args;
-use tokio::sync::Mutex;
+
+mod web_service;
 
 #[actix_web::main]
 async fn main() -> Result<()> {
@@ -39,6 +43,7 @@ async fn main() -> Result<()> {
                 .service(shutdown)
                 .service(find_keyframes)
                 .service(list_jobs)
+                .service(delete_job)
         })
         .bind(("127.0.0.1", 8080))?
         .run(),

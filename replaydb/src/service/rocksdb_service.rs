@@ -1,3 +1,14 @@
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use anyhow::{bail, Result};
+use hashbrown::HashMap;
+use log::{info, warn};
+use savant_core::transport::zeromq::{NonBlockingReader, NonBlockingWriter};
+use tokio::sync::Mutex;
+use tokio::task::JoinHandle;
+use uuid::Uuid;
+
 use crate::job::configuration::JobConfiguration;
 use crate::job::factory::RocksDbJobFactory;
 use crate::job::query::JobQuery;
@@ -5,18 +16,9 @@ use crate::job::stop_condition::JobStopCondition;
 use crate::job::SyncJobStopCondition;
 use crate::service::configuration::{ServiceConfiguration, Storage};
 use crate::service::JobManager;
-use crate::store::rocksdb::RocksDbStore;
 use crate::store::{Store, SyncRocksDbStore};
+use crate::store::rocksdb::RocksDbStore;
 use crate::stream_processor::RocksDbStreamProcessor;
-use anyhow::{bail, Result};
-use hashbrown::HashMap;
-use log::{info, warn};
-use savant_core::transport::zeromq::{NonBlockingReader, NonBlockingWriter};
-use std::path::PathBuf;
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use tokio::task::JoinHandle;
-use uuid::Uuid;
 
 pub struct RocksDbService {
     store: SyncRocksDbStore,
@@ -118,6 +120,8 @@ impl JobManager for RocksDbService {
     fn stop_job(&mut self, job_id: Uuid) -> Result<()> {
         if let Some((job_handle, _, _)) = self.job_map.remove(&job_id) {
             job_handle.abort();
+        } else {
+            bail!("Job {} not found", job_id);
         }
         Ok(())
     }
@@ -201,10 +205,11 @@ impl JobManager for RocksDbService {
 
 #[cfg(test)]
 mod tests {
-    use crate::service::configuration::ServiceConfiguration;
-    use crate::service::rocksdb_service::RocksDbService;
-    use crate::service::JobManager;
     use std::env::set_var;
+
+    use crate::service::configuration::ServiceConfiguration;
+    use crate::service::JobManager;
+    use crate::service::rocksdb_service::RocksDbService;
 
     #[tokio::test]
     async fn test_rocksdb_service() -> anyhow::Result<()> {

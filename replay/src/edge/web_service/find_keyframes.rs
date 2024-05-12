@@ -1,25 +1,8 @@
-use crate::web_service::JobService;
-use actix_web::body::BoxBody;
-use actix_web::http::header::ContentType;
-use actix_web::{post, web, HttpResponse, Responder};
+use actix_web::{post, web, Responder};
 use log::debug;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize)]
-enum Response {
-    Ok(String, Vec<String>),
-    Error(String),
-}
-
-impl Responder for Response {
-    type Body = BoxBody;
-    fn respond_to(self, _req: &actix_web::HttpRequest) -> HttpResponse<Self::Body> {
-        let body = serde_json::to_string(&self).unwrap();
-        HttpResponse::Ok()
-            .content_type(ContentType::json())
-            .body(body)
-    }
-}
+use crate::web_service::{JobService, ResponseMessage};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct FindKeyframesQuery {
@@ -43,10 +26,10 @@ async fn find_keyframes(
         serde_json::to_string(&query).unwrap()
     );
     match uuids_res {
-        Ok(uuids) => Response::Ok(
+        Ok(uuids) => ResponseMessage::FindKeyframes(
             query.source_id.clone(),
             uuids.into_iter().map(String::from).collect(),
         ),
-        Err(e) => Response::Error(e.to_string()),
+        Err(e) => ResponseMessage::Error(e.to_string()),
     }
 }
