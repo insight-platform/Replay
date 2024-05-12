@@ -32,7 +32,5 @@ Replay is licensed under the BSL-1.1 license. See [LICENSE](LICENSE) for more in
 
 ### Obtaining Production-Use License
 
-To obtain a production-use license, please contact Us:
-
-- E-mail: info@bw-sw.com (Title: `In-Sight Replay Production-Use License Request`);
-- Website: [Savant](https://savant-ai.io/).
+To obtain a production-use license, please fill out the form
+at [In-Sight Licensing](https://forms.gle/kstX7BrgzqrSLCJ18).
