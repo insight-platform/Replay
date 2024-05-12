@@ -18,6 +18,11 @@ Replay is advanced service providing following features:
 - can look backward when video stream retrieval;
 - can set additional attributes to retrieved video streams;
 
+## How It Is Implemented
+
+Replay is high-performance service implemented in Rust programming language. It uses RocksDB as a storage engine to
+deliver video with low latency and high throughput.
+
 ## How One Can Use It
 
 **Online mode**: when the pipeline finds a key event it can request video from Replay to another module to implement

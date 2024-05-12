@@ -12,10 +12,6 @@ categories.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
-[[bin]]
-name = "replay-edge"
-path = "src/edge/edge.rs"
-
 [dependencies]
 anyhow = { workspace = true }
 env_logger = { workspace = true }
