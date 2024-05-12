@@ -33,7 +33,7 @@ pub struct SinkConfiguration {
 impl Default for SinkConfiguration {
     fn default() -> Self {
         Self {
-            url: String::from("dealer+connect:///tmp/in"),
+            url: String::from("dealer+connect:ipc:///tmp/in"),
             send_timeout: Duration::from_secs(1),
             send_retries: 3,
             receive_timeout: Duration::from_secs(1),

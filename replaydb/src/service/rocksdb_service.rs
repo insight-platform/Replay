@@ -16,8 +16,8 @@ use crate::job::stop_condition::JobStopCondition;
 use crate::job::SyncJobStopCondition;
 use crate::service::configuration::{ServiceConfiguration, Storage};
 use crate::service::JobManager;
-use crate::store::{Store, SyncRocksDbStore};
 use crate::store::rocksdb::RocksDbStore;
+use crate::store::{Store, SyncRocksDbStore};
 use crate::stream_processor::RocksDbStreamProcessor;
 
 pub struct RocksDbService {
@@ -106,7 +106,7 @@ impl RocksDbService {
 }
 
 impl JobManager for RocksDbService {
-    async fn add_job(&mut self, job_query: JobQuery) -> Result<()> {
+    async fn add_job(&mut self, job_query: JobQuery) -> Result<Uuid> {
         let configuration = job_query.configuration.clone();
         let mut job = self.job_factory.create_job(job_query).await?;
         let job_id = job.get_id();
@@ -114,7 +114,7 @@ impl JobManager for RocksDbService {
         let job_handle = tokio::spawn(async move { job.run_until_complete().await });
         self.job_map
             .insert(job_id, (job_handle, configuration, stop_condition));
-        Ok(())
+        Ok(job_id)
     }
 
     fn stop_job(&mut self, job_id: Uuid) -> Result<()> {
@@ -189,6 +189,7 @@ impl JobManager for RocksDbService {
         let mut to_remove = vec![];
         for (uuid, (job_handle, _, _)) in self.job_map.iter() {
             if job_handle.is_finished() {
+                info!("Job: {} is finished and is marked for clean up.", uuid);
                 to_remove.push(*uuid);
             }
         }
@@ -196,7 +197,9 @@ impl JobManager for RocksDbService {
             let (job_handle, _, _) = self.job_map.remove(&uuid).unwrap();
             let res = job_handle.await?;
             if let Err(e) = res {
-                warn!("Job: {} failed with error: {}", uuid, e);
+                warn!("Job: {} failed with error: {} was cleaned.", uuid, e);
+            } else {
+                info!("Job: {} finished successfully and cleaned.", uuid);
             }
         }
         Ok(())
@@ -208,8 +211,8 @@ mod tests {
     use std::env::set_var;
 
     use crate::service::configuration::ServiceConfiguration;
-    use crate::service::JobManager;
     use crate::service::rocksdb_service::RocksDbService;
+    use crate::service::JobManager;
 
     #[tokio::test]
     async fn test_rocksdb_service() -> anyhow::Result<()> {

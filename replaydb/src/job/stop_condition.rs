@@ -6,23 +6,29 @@ use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum JobStopCondition {
+    #[serde(rename = "last_frame")]
     LastFrame {
         uuid: String,
         #[serde(skip)]
         uuid_u128: Option<u128>,
     },
+    #[serde(rename = "frame_count")]
     FrameCount(usize),
+    #[serde(rename = "key_frame_count")]
     KeyFrameCount(usize),
+    #[serde(rename = "pts_delta_sec")]
     PTSDeltaSec {
         max_delta_sec: f64,
         #[serde(skip)]
         first_pts: Option<i64>,
     },
+    #[serde(rename = "real_time_delta_ms")]
     RealTimeDelta {
         configured_delta_ms: u64,
         #[serde(skip)]
         initial_ts: Option<Instant>,
     },
+    #[serde(rename = "now")]
     Now,
 }
 

@@ -1,4 +1,4 @@
-use actix_web::{delete, Responder, web};
+use actix_web::{delete, web, Responder};
 use serde::Deserialize;
 use uuid::Uuid;
 

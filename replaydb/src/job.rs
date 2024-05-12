@@ -85,6 +85,8 @@ pub(crate) struct Job<S: Store> {
     store: Arc<Mutex<S>>,
     #[serde(skip)]
     writer: Arc<Mutex<JobWriter>>,
+    #[serde(skip)]
+    uuid_id: Uuid,
     id: u128,
     stop_condition: Arc<SyncJobStopCondition>,
     position: usize,
@@ -116,7 +118,7 @@ where
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("Job")
-            .field("id", &self.id)
+            .field("id", &self.uuid_id.to_string())
             .field("stop_condition", &self.stop_condition.0.lock())
             .field("position", &self.position)
             .field("configuration", &self.configuration)
@@ -154,9 +156,11 @@ where
             bail!("Stored source id or resulting source id is empty!");
         }
 
+        let uuid_id = Uuid::from_u128(id);
         Ok(Self {
             store,
             writer,
+            uuid_id,
             id,
             position,
             stop_condition: Arc::new(SyncJobStopCondition::new(stop_condition)),
@@ -179,7 +183,7 @@ where
                 let log_message = format!(
                     "No message received during the configured {} idle time (ms). Job Id: {} will be finished!",
                     self.configuration.max_idle_duration.as_millis(),
-                    self.id
+                    self.uuid_id
                 );
                 log::warn!(target: "replay::db::job::read_message", "{}", &log_message);
                 bail!("{}", log_message);
@@ -251,7 +255,7 @@ where
         if pts < last_pts {
             let message = format!(
                 "PTS discrepancy detected in job {}: {} < {}!",
-                self.id, pts, last_pts
+                self.uuid_id, pts, last_pts
             );
             log::warn!(target: "replay::db::job::handle_discrepant_pts", "{}", &message);
             if self.configuration.stop_on_incorrect_pts {
@@ -287,7 +291,7 @@ where
                 if now.elapsed() > self.configuration.max_delivery_duration {
                     let message = format!(
                         "Message delivery timeout occurred in job {}. Job will be finished!",
-                        self.id
+                        self.uuid_id
                     );
                     log::warn!(target: "replay::db::job::send_either", "{}", &message);
                     bail!("{}", message);
@@ -301,13 +305,16 @@ where
                 let res = res.unwrap()?;
                 match res {
                     WriterResult::SendTimeout => {
-                        log::warn!("Send timeout occurred in job {}, retrying ...", self.id);
+                        log::warn!(
+                            "Send timeout occurred in job {}, retrying ...",
+                            self.uuid_id
+                        );
                         break;
                     }
                     WriterResult::AckTimeout(t) => {
                         let message = format!(
                             "Ack timeout ({}) occurred in job {}, retrying ...",
-                            t, self.id
+                            t, self.uuid_id
                         );
                         log::warn!(target: "replay::db::job::send_either", "{}", &message);
                         break;
@@ -352,7 +359,10 @@ where
 
             self.position += 1;
             if self.stop_condition.0.lock().check(&m)? {
-                log::info!("Job Id: {} has been finished by stop condition!", self.id);
+                log::info!(
+                    "Job Id: {} has been finished by stop condition!",
+                    self.uuid_id
+                );
                 break;
             }
         }
@@ -365,7 +375,7 @@ where
         if !prev_message.is_video_frame() {
             let message = format!(
                 "First message in job {} is not a video frame, job will be finished!",
-                self.id
+                self.uuid_id
             );
             log::warn!(target: "replay::db::job", "{}", &message);
             bail!("{}", message);
@@ -418,14 +428,14 @@ where
                 let delay = if delay > self.configuration.max_duration {
                     let message = format!(
                         "PTS discrepancy delay is greater than the configured max delay in job {}. The job will use configured delay for the next frame!",
-                        self.id
+                        self.uuid_id
                     );
                     log::debug!(target: "replay::db::job", "{}", &message);
                     self.configuration.max_duration
                 } else if delay < self.configuration.min_duration {
                     let message = format!(
                         "PTS discrepancy delay is less than the configured min delay in job {}. The job will use configured delay for the next frame!",
-                        self.id
+                        self.uuid_id
                     );
                     log::debug!(target: "replay::db::job", "{}", &message);
                     self.configuration.min_duration
@@ -462,7 +472,10 @@ where
             self.position += 1;
 
             if self.stop_condition.0.lock().check(&message)? {
-                log::info!("Job Id: {} has been finished by stop condition!", self.id);
+                log::info!(
+                    "Job Id: {} has been finished by stop condition!",
+                    self.uuid_id
+                );
                 break;
             }
 

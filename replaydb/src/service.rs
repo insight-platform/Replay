@@ -1,14 +1,16 @@
+use std::future::Future;
+
+use uuid::Uuid;
+
 use crate::job::configuration::JobConfiguration;
 use crate::job::query::JobQuery;
 use crate::job::stop_condition::JobStopCondition;
-use std::future::Future;
-use uuid::Uuid;
 
 pub mod configuration;
 pub mod rocksdb_service;
 
 pub trait JobManager {
-    fn add_job(&mut self, job: JobQuery) -> impl Future<Output = anyhow::Result<()>> + Send;
+    fn add_job(&mut self, job: JobQuery) -> impl Future<Output = anyhow::Result<Uuid>> + Send;
     fn stop_job(&mut self, job_id: Uuid) -> anyhow::Result<()>;
     fn update_stop_condition(
         &mut self,

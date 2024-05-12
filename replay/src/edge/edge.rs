@@ -1,20 +1,21 @@
 use std::env::args;
 
-use actix_web::{App, HttpServer, web};
+use actix_web::{web, App, HttpServer};
 use anyhow::{anyhow, Result};
 use log::{debug, info};
 use tokio::sync::Mutex;
 
 use replaydb::service::configuration::ServiceConfiguration;
-use replaydb::service::JobManager;
 use replaydb::service::rocksdb_service::RocksDbService;
+use replaydb::service::JobManager;
 
 use crate::web_service::del_job::delete_job;
 use crate::web_service::find_keyframes::find_keyframes;
-use crate::web_service::JobService;
 use crate::web_service::list_jobs::list_jobs;
+use crate::web_service::new_job::new_job;
 use crate::web_service::shutdown::shutdown;
 use crate::web_service::status::status;
+use crate::web_service::JobService;
 
 mod web_service;
 
@@ -37,13 +38,16 @@ async fn main() -> Result<()> {
     let http_job_service = job_service.clone();
     let job = tokio::spawn(
         HttpServer::new(move || {
-            App::new()
+            let scope = web::scope("/api/v1")
                 .app_data(http_job_service.clone())
                 .service(status)
                 .service(shutdown)
                 .service(find_keyframes)
                 .service(list_jobs)
                 .service(delete_job)
+                .service(new_job);
+
+            App::new().service(scope)
         })
         .bind(("127.0.0.1", 8080))?
         .run(),

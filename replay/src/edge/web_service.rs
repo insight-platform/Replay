@@ -11,6 +11,7 @@ use replaydb::service::rocksdb_service::RocksDbService;
 pub mod del_job;
 pub mod find_keyframes;
 pub mod list_jobs;
+pub mod new_job;
 pub mod shutdown;
 pub mod status;
 
@@ -23,6 +24,7 @@ pub struct JobService {
 enum ResponseMessage {
     Ok,
     ListJobs(Vec<(String, JobConfiguration, JobStopCondition)>),
+    NewJob(String),
     FindKeyframes(String, Vec<String>),
     StatusRunning,
     StatusFinished,
