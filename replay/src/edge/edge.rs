@@ -15,6 +15,7 @@ use crate::web_service::list_jobs::{list_job, list_jobs};
 use crate::web_service::new_job::new_job;
 use crate::web_service::shutdown::shutdown;
 use crate::web_service::status::status;
+use crate::web_service::update_stop_condition::update_stop_condition;
 use crate::web_service::JobService;
 
 mod web_service;
@@ -46,7 +47,8 @@ async fn main() -> Result<()> {
                 .service(list_job)
                 .service(list_jobs)
                 .service(delete_job)
-                .service(new_job);
+                .service(new_job)
+                .service(update_stop_condition);
 
             App::new().service(scope)
         })

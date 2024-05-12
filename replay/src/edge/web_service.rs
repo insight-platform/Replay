@@ -14,6 +14,7 @@ pub mod list_jobs;
 pub mod new_job;
 pub mod shutdown;
 pub mod status;
+pub mod update_stop_condition;
 
 pub struct JobService {
     pub service: Mutex<RocksDbService>,
