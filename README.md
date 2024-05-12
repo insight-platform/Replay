@@ -2,7 +2,7 @@
 
 Replay is Savant ecosystem video storage and on-demand video playback service.
 
-## What it provides
+## What It Provides
 
 Replay is advanced service providing following features:
 
@@ -18,7 +18,7 @@ Replay is advanced service providing following features:
 - can look backward when video stream retrieval;
 - can set additional attributes to retrieved video streams;
 
-## How one can use it
+## How One Can Use It
 
 **Online mode**: when the pipeline finds a key event it can request video from Replay to another module to implement
 advanced analysis or to a sink to save it somehow;
