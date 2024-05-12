@@ -18,7 +18,7 @@ pub trait JobManager {
         stop_condition: JobStopCondition,
     ) -> anyhow::Result<()>;
     fn list_jobs(&self) -> Vec<(Uuid, JobConfiguration, JobStopCondition)>;
-    fn list_stopped_jobs(&self) -> Vec<(Uuid, Option<String>)>;
+    fn list_stopped_jobs(&self) -> Vec<(Uuid, JobConfiguration, Option<String>)>;
     fn check_stream_processor_finished(
         &mut self,
     ) -> impl Future<Output = anyhow::Result<bool>> + Send;

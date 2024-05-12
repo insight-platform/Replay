@@ -50,7 +50,10 @@ cat <<EOF
       "secs": 10,
       "nanos": 0
     },
-    "send_metadata_only": false
+    "send_metadata_only": false,
+    "user_attributes": {
+        "namespace": "key"
+    }
   },
   "stop_condition": {
     "frame_count": 100

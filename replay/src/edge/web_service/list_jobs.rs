@@ -64,7 +64,7 @@ async fn list_stopped_jobs(js: web::Data<JobService>) -> impl Responder {
     let stopped_jobs = js_bind
         .list_stopped_jobs()
         .into_iter()
-        .map(|(uuid, res)| (uuid.to_string(), res))
+        .map(|(uuid, conf, res)| (uuid.to_string(), conf, res))
         .collect::<Vec<_>>();
     ResponseMessage::ListStoppedJobs(stopped_jobs)
 }

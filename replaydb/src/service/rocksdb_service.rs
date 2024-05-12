@@ -35,7 +35,7 @@ pub struct RocksDbService {
         ),
     >,
     job_eviction_ttl: Duration,
-    stopped_jobs: HashMap<Uuid, (Option<String>, SystemTime)>,
+    stopped_jobs: HashMap<Uuid, (Option<String>, JobConfiguration, SystemTime)>,
 }
 
 impl TryFrom<&ServiceConfiguration> for SyncRocksDbStore {
@@ -124,12 +124,13 @@ impl JobManager for RocksDbService {
     }
 
     async fn stop_job(&mut self, job_id: Uuid) -> Result<()> {
-        if let Some((job_handle, _, _)) = self.job_map.remove(&job_id) {
+        if let Some((job_handle, conf, _)) = self.job_map.remove(&job_id) {
             job_handle.abort();
             self.stopped_jobs.insert(
                 job_id,
                 (
                     job_handle.await?.err().map(|e| e.to_string()),
+                    conf,
                     SystemTime::now(),
                 ),
             );
@@ -158,10 +159,10 @@ impl JobManager for RocksDbService {
             .collect()
     }
 
-    fn list_stopped_jobs(&self) -> Vec<(Uuid, Option<String>)> {
+    fn list_stopped_jobs(&self) -> Vec<(Uuid, JobConfiguration, Option<String>)> {
         self.stopped_jobs
             .iter()
-            .map(|(uuid, (res, _))| (*uuid, res.clone()))
+            .map(|(uuid, (res, conf, _))| (*uuid, conf.clone(), res.clone()))
             .collect()
     }
 
@@ -214,20 +215,22 @@ impl JobManager for RocksDbService {
             }
         }
         for uuid in to_remove {
-            let (job_handle, _, _) = self.job_map.remove(&uuid).unwrap();
+            let (job_handle, conf, _) = self.job_map.remove(&uuid).unwrap();
             let res = job_handle.await?;
             if let Err(e) = &res {
                 warn!("Job: {} failed with error: {} was cleaned.", uuid, e);
             } else {
                 info!("Job: {} finished successfully and cleaned.", uuid);
             }
-            self.stopped_jobs
-                .insert(uuid, (res.err().map(|e| e.to_string()), SystemTime::now()));
+            self.stopped_jobs.insert(
+                uuid,
+                (res.err().map(|e| e.to_string()), conf, SystemTime::now()),
+            );
         }
         let to_remove = self
             .stopped_jobs
             .iter()
-            .filter_map(|(uuid, (_, time))| {
+            .filter_map(|(uuid, (_, _, time))| {
                 if time.elapsed().unwrap() > self.job_eviction_ttl {
                     info!(
                         "Job: {} was stopped for more than {:?}. Clearing the information about it.",
