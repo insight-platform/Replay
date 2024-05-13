@@ -13,4 +13,6 @@ ENV LD_LIBRARY_PATH=/opt/libs
 ENV DB_PATH=/opt/rocksdb
 ENV RUST_LOG=info
 
+EXPOSE 8080
+
 CMD ["/opt/bin/replay", "/opt/etc/config.json"]
