@@ -35,10 +35,10 @@ jobs:
       - name: Build Docs
         run: |
           cd docs
-          make docs
+          make html
           tar \
           --dereference --hard-dereference \
-          --directory docs/build/html -cvf artifact.tar .
+          --directory _build/html -cvf artifact.tar .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v3
