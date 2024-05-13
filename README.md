@@ -14,7 +14,7 @@ Replay is an advanced storage providing features required for non-linear compute
 - can fix incorrect TS in re-streaming video streams;
 - can look backward when video stream re-streamed;
 - can set additional attributes to retrieved video streams;
-- can work as a sidecar or intermediary service in Savant pipelines;
+- can work as a sidecar or intermediary service in Savant pipelines.
 
 ## How It Is Implemented
 

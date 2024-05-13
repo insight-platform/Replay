@@ -1,19 +1,17 @@
 Replay Documentation
 ====================
 
-Replay is Savant ecosystem video storage and on-demand video playback service providing following features:
+Replay is an advanced storage providing features required for non-linear computer vision and video analytics:
 
-* collects video from multiple streams (archiving with TTL eviction);
-* provides a REST API for video retrieval to Savant sinks or modules;
-* can work as a sidecar or intermediary service in Savant pipelines;
-* PTS-synchronized and fast video retrieval;
-* supports setting minimum and maximum PTS to increase or decrease the video playback speed;
-* supports configurable video retrieval stop conditions;
-* can fix incorrect PTS in video streams;
-* can remap video streams to other source IDs;
-* can set routing labels for video streams (future feature);
-* can look backward when video stream retrieval;
-* can set additional attributes to retrieved video streams;
+- collects video from multiple streams (archiving with TTL eviction);
+- provides a REST API for video re-streaming to Savant sinks or modules;
+- supports time-synchronized and fast video re-streaming;
+- supports configurable video re-streaming stop conditions;
+- supports setting minimum and maximum frame duration to increase or decrease the video playback speed;
+- can fix incorrect TS in re-streaming video streams;
+- can look backward when video stream re-streamed;
+- can set additional attributes to retrieved video streams;
+- can work as a sidecar or intermediary service in Savant pipelines.
 
 .. toctree::
    :maxdepth: 2
