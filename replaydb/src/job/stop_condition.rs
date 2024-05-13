@@ -1,3 +1,4 @@
+use crate::best_ts;
 use anyhow::Result;
 use savant_core::message::Message;
 use serde::{Deserialize, Serialize};
@@ -97,10 +98,10 @@ impl JobStopCondition {
                 first_pts,
             } => {
                 if first_pts.is_none() {
-                    *first_pts = Some(message.get_pts());
+                    *first_pts = Some(best_ts(&message));
                     return Ok(false);
                 }
-                let pts = message.get_pts();
+                let pts = best_ts(&message);
                 let prev_pts = first_pts.unwrap();
                 let pts_delta = pts.saturating_sub(prev_pts);
                 let (time_base_n, time_base_d) = message.get_time_base();

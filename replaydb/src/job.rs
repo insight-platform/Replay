@@ -18,7 +18,7 @@ use stop_condition::JobStopCondition;
 use crate::job_writer::JobWriter;
 use crate::store::rocksdb::RocksDbStore;
 use crate::store::Store;
-use crate::ParkingLotMutex;
+use crate::{best_ts, ParkingLotMutex};
 
 pub mod configuration;
 pub mod factory;
@@ -92,7 +92,7 @@ pub(crate) struct Job<S: Store> {
     stop_condition: Arc<SyncJobStopCondition>,
     position: usize,
     configuration: JobConfiguration,
-    last_pts: Option<i64>,
+    last_ts: Option<i64>,
     update: Option<VideoFrameUpdate>,
 }
 
@@ -166,7 +166,7 @@ where
             position,
             stop_condition: Arc::new(SyncJobStopCondition::new(stop_condition)),
             configuration,
-            last_pts: None,
+            last_ts: None,
             update,
         })
     }
@@ -240,27 +240,32 @@ where
         Ok(Some(message))
     }
 
-    fn check_pts_decrease(&mut self, message: &Message) -> Result<bool> {
+    fn check_ts_decrease(&mut self, message: &Message) -> Result<bool> {
         if !message.is_video_frame() {
             return Ok(false);
         }
         let message = message.as_video_frame().unwrap();
-        if self.last_pts.is_none() {
-            self.last_pts = Some(message.get_pts());
+        if self.last_ts.is_none() {
+            self.last_ts = Some(best_ts(&message));
             return Ok(false);
         }
-        let pts = message.get_pts();
-        let last_pts = self.last_pts.unwrap();
-        self.last_pts = Some(pts);
-        debug!("PTS: {} - Last PTS: {} = {}", pts, last_pts, pts - last_pts);
-        if pts < last_pts {
+        let ts = best_ts(&message);
+        let last_ts = self.last_ts.unwrap();
+        self.last_ts = Some(ts);
+        debug!(
+            "Current Frame TS: {} - Last Frame TS: {} = {}",
+            ts,
+            last_ts,
+            ts - last_ts
+        );
+        if ts < last_ts {
             let message = format!(
-                "PTS discrepancy detected in job {}: {} < {}!",
-                self.uuid_id, pts, last_pts
+                "Frame TS discrepancy detected in job {}: {} < {}!",
+                self.uuid_id, ts, last_ts
             );
-            log::warn!(target: "replay::db::job::handle_discrepant_pts", "{}", &message);
+            log::warn!(target: "replay::db::job::check_ts_decrease", "{}", &message);
             if self.configuration.stop_on_incorrect_pts {
-                log::warn!("Job will be finished due to a discrepant pts!");
+                log::warn!("Job will be finished due to a discrepant TS!");
                 bail!("{}", message);
             }
             Ok(true)
@@ -352,7 +357,7 @@ where
                 continue;
             }
             let m = m.unwrap();
-            self.check_pts_decrease(&m)?;
+            self.check_ts_decrease(&m)?;
 
             let sliced_data = data.iter().map(|d| d.as_slice()).collect::<Vec<_>>();
             self.send_either(SendEither::Message(&m, &sliced_data))
@@ -414,10 +419,10 @@ where
                     .unwrap()
                     .as_video_frame()
                     .unwrap();
-                if self.check_pts_decrease(&message)? {
+                if self.check_ts_decrease(&message)? {
                     self.configuration.pts_discrepancy_fix_duration
                 } else {
-                    let pts_diff = videoframe.get_pts() - prev_video_frame.get_pts();
+                    let pts_diff = best_ts(&videoframe) - best_ts(&prev_video_frame);
                     let pts_diff = pts_diff.max(0) as f64;
                     let (time_base_num, time_base_den) = videoframe.get_time_base();
                     let pts_diff = pts_diff * time_base_num as f64 / time_base_den as f64;
@@ -561,8 +566,8 @@ mod tests {
     fn test_configuration_builder() -> Result<()> {
         let _ = JobConfigurationBuilder::default()
             .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
-            .stored_source_id("source_id".to_string())
-            .resulting_source_id("resulting_id".to_string())
+            .stored_stream_id("source_id".to_string())
+            .resulting_stream_id("resulting_id".to_string())
             .build_and_validate()?;
         Ok(())
     }
@@ -624,8 +629,8 @@ mod tests {
 
         let job_conf = JobConfigurationBuilder::default()
             .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
-            .stored_source_id("source_id".to_string())
-            .resulting_source_id("resulting_id".to_string())
+            .stored_stream_id("source_id".to_string())
+            .resulting_stream_id("resulting_id".to_string())
             .max_idle_duration(Duration::from_millis(50))
             .build_and_validate()?;
         let job = Job::new(
@@ -667,8 +672,8 @@ mod tests {
 
         let job_conf = JobConfigurationBuilder::default()
             .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
-            .stored_source_id("source_id".to_string())
-            .resulting_source_id("resulting_id".to_string())
+            .stored_stream_id("source_id".to_string())
+            .resulting_stream_id("resulting_id".to_string())
             .max_idle_duration(Duration::from_millis(50))
             .build_and_validate()?;
 
@@ -701,8 +706,8 @@ mod tests {
 
         let job_conf = JobConfigurationBuilder::default()
             .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
-            .stored_source_id("source_id".to_string())
-            .resulting_source_id("resulting_id".to_string())
+            .stored_stream_id("source_id".to_string())
+            .resulting_stream_id("resulting_id".to_string())
             .routing_labels(RoutingLabelsUpdateStrategy::Replace(vec![
                 "label-1".to_string(),
                 "label-2".to_string(),
@@ -755,8 +760,8 @@ mod tests {
 
         let job_conf = JobConfigurationBuilder::default()
             .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
-            .stored_source_id("source_id".to_string())
-            .resulting_source_id("resulting_id".to_string())
+            .stored_stream_id("source_id".to_string())
+            .resulting_stream_id("resulting_id".to_string())
             .skip_intermediary_eos(true)
             .build_and_validate()?;
 
@@ -795,8 +800,8 @@ mod tests {
 
         let job_conf = JobConfigurationBuilder::default()
             .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
-            .stored_source_id("source_id".to_string())
-            .resulting_source_id("resulting_id".to_string())
+            .stored_stream_id("source_id".to_string())
+            .resulting_stream_id("resulting_id".to_string())
             .build_and_validate()?;
 
         let mut job = Job::new(
@@ -810,7 +815,7 @@ mod tests {
         )?;
 
         let eos = Message::end_of_stream(EndOfStream::new("source_id".to_string()));
-        let res = job.check_pts_decrease(&eos)?;
+        let res = job.check_ts_decrease(&eos)?;
         assert_eq!(res, false);
 
         let first = gen_properly_filled_frame().to_message();
@@ -821,13 +826,13 @@ mod tests {
         tokio_timerfd::sleep(Duration::from_millis(1)).await?;
         let third = gen_properly_filled_frame().to_message();
 
-        let res = job.check_pts_decrease(&first)?;
+        let res = job.check_ts_decrease(&first)?;
         assert_eq!(res, false);
 
-        let res = job.check_pts_decrease(&third)?;
+        let res = job.check_ts_decrease(&third)?;
         assert_eq!(res, false);
 
-        let res = job.check_pts_decrease(&second)?;
+        let res = job.check_ts_decrease(&second)?;
         assert_eq!(res, true);
         drop(job);
         let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
@@ -844,8 +849,8 @@ mod tests {
 
         let job_conf = JobConfigurationBuilder::default()
             .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
-            .stored_source_id("source_id".to_string())
-            .resulting_source_id("resulting_id".to_string())
+            .stored_stream_id("source_id".to_string())
+            .resulting_stream_id("resulting_id".to_string())
             .stop_on_incorrect_pts(true)
             .build_and_validate()?;
 
@@ -864,10 +869,10 @@ mod tests {
         tokio_timerfd::sleep(Duration::from_millis(1)).await?;
         let second = gen_properly_filled_frame().to_message();
 
-        let res = job.check_pts_decrease(&second)?;
+        let res = job.check_ts_decrease(&second)?;
         assert_eq!(res, false);
 
-        let res = job.check_pts_decrease(&first);
+        let res = job.check_ts_decrease(&first);
         assert!(res.is_err());
         drop(job);
         let w = Arc::try_unwrap(w).or(Err(anyhow::anyhow!("Arc unwrapping failed")))?;
@@ -884,8 +889,8 @@ mod tests {
 
         let job_conf = JobConfigurationBuilder::default()
             .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
-            .stored_source_id("source_id".to_string())
-            .resulting_source_id("resulting_id".to_string())
+            .stored_stream_id("source_id".to_string())
+            .resulting_stream_id("resulting_id".to_string())
             .build_and_validate()?;
 
         let job = Job::new(
@@ -925,8 +930,8 @@ mod tests {
 
         let job_conf = JobConfigurationBuilder::default()
             .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
-            .stored_source_id("source_id".to_string())
-            .resulting_source_id("resulting_id".to_string())
+            .stored_stream_id("source_id".to_string())
+            .resulting_stream_id("resulting_id".to_string())
             .stop_on_incorrect_pts(true)
             .max_delivery_duration(Duration::from_millis(300))
             .build_and_validate()?;
@@ -976,8 +981,8 @@ mod tests {
 
         let job_conf = JobConfigurationBuilder::default()
             .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
-            .stored_source_id("source_id".to_string())
-            .resulting_source_id("resulting_id".to_string())
+            .stored_stream_id("source_id".to_string())
+            .resulting_stream_id("resulting_id".to_string())
             .max_idle_duration(Duration::from_millis(50))
             .build_and_validate()?;
 
@@ -1036,8 +1041,8 @@ mod tests {
         //dbg!("store created", thread_now.elapsed());
         let job_conf = JobConfigurationBuilder::default()
             .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
-            .stored_source_id("source_id".to_string())
-            .resulting_source_id("resulting_id".to_string())
+            .stored_stream_id("source_id".to_string())
+            .resulting_stream_id("resulting_id".to_string())
             .max_idle_duration(Duration::from_millis(50))
             .build_and_validate()?;
 
@@ -1142,8 +1147,8 @@ mod tests {
 
         let job_conf = JobConfigurationBuilder::default()
             .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
-            .stored_source_id("source_id".to_string())
-            .resulting_source_id("resulting_id".to_string())
+            .stored_stream_id("source_id".to_string())
+            .resulting_stream_id("resulting_id".to_string())
             .max_idle_duration(Duration::from_millis(50))
             .skip_intermediary_eos(false)
             .build_and_validate()?;
@@ -1201,8 +1206,8 @@ mod tests {
 
         let job_conf = JobConfigurationBuilder::default()
             .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
-            .stored_source_id("source_id".to_string())
-            .resulting_source_id("resulting_id".to_string())
+            .stored_stream_id("source_id".to_string())
+            .resulting_stream_id("resulting_id".to_string())
             .max_idle_duration(Duration::from_millis(50))
             .min_duration(Duration::from_millis(frame_duration))
             .build_and_validate()?;
@@ -1272,8 +1277,8 @@ mod tests {
 
         let job_conf = JobConfigurationBuilder::default()
             .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
-            .stored_source_id("source_id".to_string())
-            .resulting_source_id("resulting_id".to_string())
+            .stored_stream_id("source_id".to_string())
+            .resulting_stream_id("resulting_id".to_string())
             .max_idle_duration(Duration::from_millis(50))
             .min_duration(Duration::from_millis(1))
             .max_duration(Duration::from_millis(frame_duration))
@@ -1353,8 +1358,8 @@ mod tests {
 
         let job_conf = JobConfigurationBuilder::default()
             .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
-            .stored_source_id("source_id".to_string())
-            .resulting_source_id("resulting_id".to_string())
+            .stored_stream_id("source_id".to_string())
+            .resulting_stream_id("resulting_id".to_string())
             .max_idle_duration(Duration::from_millis(50))
             .build_and_validate()?;
 
@@ -1404,8 +1409,8 @@ mod tests {
 
         let job_conf = JobConfigurationBuilder::default()
             .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
-            .stored_source_id("source_id".to_string())
-            .resulting_source_id("resulting_id".to_string())
+            .stored_stream_id("source_id".to_string())
+            .resulting_stream_id("resulting_id".to_string())
             .max_idle_duration(Duration::from_millis(50))
             .build_and_validate()?;
 

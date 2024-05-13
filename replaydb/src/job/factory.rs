@@ -138,8 +138,8 @@ mod tests {
         let configuration = JobConfigurationBuilder::default()
             .min_duration(Duration::from_millis(7))
             .max_duration(Duration::from_millis(10))
-            .stored_source_id(source_id)
-            .resulting_source_id("resulting_source_id".to_string())
+            .stored_stream_id(source_id)
+            .resulting_stream_id("resulting_source_id".to_string())
             .build()
             .unwrap();
         let stop_condition = JobStopCondition::frame_count(1);

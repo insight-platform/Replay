@@ -68,7 +68,7 @@ pub(crate) trait Store {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::get_keyframe_boundary;
+    use crate::{best_ts, get_keyframe_boundary};
     use savant_core::primitives::eos::EndOfStream;
 
     struct SampleStore {
@@ -126,7 +126,7 @@ mod tests {
                     let frame = self.messages[self.keyframes[idx].1]
                         .as_video_frame()
                         .unwrap();
-                    let current_pts = frame.get_pts() as u64;
+                    let current_pts = best_ts(&frame) as u64;
                     let time_base = frame.get_time_base();
                     let before_scaled =
                         (seconds_before * time_base.1 as f64 / time_base.0 as f64) as u64;
@@ -135,7 +135,7 @@ mod tests {
                         if self.messages[i].is_video_frame() {
                             let f = self.messages[i].as_video_frame().unwrap();
                             if let Some(true) = f.get_keyframe() {
-                                let pts = f.get_pts() as u64;
+                                let pts = best_ts(&f) as u64;
                                 if current_pts - pts > before_scaled {
                                     break;
                                 }
