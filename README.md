@@ -31,6 +31,10 @@ advanced analysis or to a sink to save it somehow;
 **Offline mode**: when the user needs particular video to be processed one more time, it can request it from Replay
 based on Metadata information stored in a 3rd-party storage;
 
+## Documentation
+
+The documentation is available at [GitHub Pages](https://insight-platform.github.io/Replay/) directory.
+
 ## LICENSE
 
 Replay is licensed under the BSL-1.1 license. See [LICENSE](LICENSE) for more information.
