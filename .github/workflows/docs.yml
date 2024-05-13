@@ -44,7 +44,7 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: github-pages
-          path: artifact.tar
+          path: docs/artifact.tar
           if-no-files-found: error
 
   deploy-docs:
