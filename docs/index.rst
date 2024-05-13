@@ -17,6 +17,6 @@ Replay is Savant ecosystem video storage and on-demand video playback service pr
 
 .. toctree::
    :maxdepth: 2
-   :caption: Contents:
+   :caption: Contents
 
    sections/introduction
