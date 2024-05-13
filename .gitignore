@@ -24,3 +24,4 @@ Cargo.lock
 /Cargo.lock
 /docs/build
 /docs/source/generated
+/docs/_build
