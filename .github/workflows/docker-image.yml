@@ -27,11 +27,11 @@ jobs:
           - docker_file: Dockerfile
             name: replay-arm64
             arch: linux/arm64
-            tag: ghcr.io/insight-platform/replay
+            tag: ghcr.io/insight-platform/replay-arm64
           - docker_file: Dockerfile
             name: replay-x86
             arch: linux/amd64
-            tag: ghcr.io/insight-platform/replay
+            tag: ghcr.io/insight-platform/replay-x86
 
     steps:
       - name: Checkout repository
