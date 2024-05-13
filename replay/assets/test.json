@@ -48,7 +48,7 @@
   },
   "storage": {
     "rocksdb": {
-      "path": "/tmp/rocksdb",
+      "path": "${DB_PATH:-/tmp/rocksdb}",
       "data_expiration_ttl": {
         "secs": 60,
         "nanos": 0
