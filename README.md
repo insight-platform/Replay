@@ -33,7 +33,7 @@ based on Metadata information stored in a 3rd-party storage;
 
 ## Documentation
 
-The documentation is available at [GitHub Pages](https://insight-platform.github.io/Replay/) directory.
+The documentation is available at [GitHub Pages](https://insight-platform.github.io/Replay/).
 
 ## LICENSE
 
