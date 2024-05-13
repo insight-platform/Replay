@@ -8,23 +8,22 @@ Replay is a solution for such complex problems. It is a high-performance video s
 Developers can use Replay for various tasks, such as:
 
 - long-term video archive;
-- postponed video processing;
+- selective video processing;
 - particular video fragment processing;
 - video playback in real time, with increased or decreased speed;
-- video footage saving;
-- selective video processing, and many others.
+- video footage saving, and many others.
 
 Let us discuss a couple of such use cases in more detail.
 
 Use Cases
 ---------
 
-Long-Term Video Archive
-^^^^^^^^^^^^^^^^^^^^^^^
+Video Archive
+^^^^^^^^^^^^^
 
 With Replay, you can simultaneously process and save video streams to long-term storage. All the discovered metadata are stored together with associated video packets, and in the future, you can re-stream the required parts for additional processing or playback. The system allows configuring TTL, which automatically clears old data.
 
-Postponed Video Processing
+Selective Video Processing
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Sometimes, you do not want to process all the data because it is inefficient, but when the particular event is triggered (e.g., a person crosses the line), you want to process the video around the event for deeper analytics.
