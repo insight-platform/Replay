@@ -152,7 +152,7 @@ where
         if configuration.min_duration > configuration.max_duration {
             bail!("Min PTS delta is greater than max PTS delta!");
         }
-        if configuration.stored_source_id.is_empty() || configuration.resulting_source_id.is_empty()
+        if configuration.stored_stream_id.is_empty() || configuration.resulting_stream_id.is_empty()
         {
             bail!("Stored source id or resulting source id is empty!");
         }
@@ -178,7 +178,7 @@ where
                 .store
                 .lock()
                 .await
-                .get_message(&self.configuration.stored_source_id, self.position)
+                .get_message(&self.configuration.stored_stream_id, self.position)
                 .await?;
             if now.elapsed() > self.configuration.max_idle_duration {
                 let log_message = format!(
@@ -207,12 +207,12 @@ where
             } else {
                 let mut eos = m.as_end_of_stream().unwrap().clone();
                 eos.source_id
-                    .clone_from(&self.configuration.resulting_source_id);
+                    .clone_from(&self.configuration.resulting_stream_id);
                 Some(Message::end_of_stream(eos))
             }
         } else if m.is_video_frame() {
             let mut f = m.as_video_frame().unwrap().clone();
-            f.set_source_id(&self.configuration.resulting_source_id);
+            f.set_source_id(&self.configuration.resulting_stream_id);
             if let Some(u) = &self.update {
                 f.update(u)?;
             }
@@ -274,7 +274,7 @@ where
         loop {
             let send_res = match one_of {
                 SendEither::Message(m, data) => self.writer.lock().await.send_message(
-                    &self.configuration.resulting_source_id,
+                    &self.configuration.resulting_stream_id,
                     m,
                     if self.configuration.send_metadata_only {
                         &[]
@@ -286,7 +286,7 @@ where
                     .writer
                     .lock()
                     .await
-                    .send_eos(&self.configuration.resulting_source_id)?,
+                    .send_eos(&self.configuration.resulting_stream_id)?,
             };
             loop {
                 if now.elapsed() > self.configuration.max_delivery_duration {

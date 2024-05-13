@@ -39,8 +39,8 @@ cat <<EOF
       "secs": 0,
       "nanos": 103333333
     },
-    "stored_source_id": "video",
-    "resulting_source_id": "vod-video-1",
+    "stored_stream_id": "video",
+    "resulting_stream_id": "vod-video-1",
     "routing_labels": "Bypass",
     "max_idle_duration": {
       "secs": 10,

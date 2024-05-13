@@ -66,8 +66,8 @@ mod tests {
         let configuration = JobConfigurationBuilder::default()
             .min_duration(Duration::from_millis(700))
             .max_duration(Duration::from_secs_f64(1_f64 / 30_f64))
-            .stored_source_id("stored_source_id".to_string())
-            .resulting_source_id("resulting_source_id".to_string())
+            .stored_stream_id("stored_source_id".to_string())
+            .resulting_stream_id("resulting_source_id".to_string())
             .user_attributes(Some(
                 vec![("key".to_string(), "value".to_string())]
                     .into_iter()

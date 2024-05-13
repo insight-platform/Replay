@@ -15,8 +15,8 @@ pub struct JobConfiguration {
     pub(crate) pts_discrepancy_fix_duration: Duration,
     pub(crate) min_duration: Duration,
     pub(crate) max_duration: Duration,
-    pub(crate) stored_source_id: String,
-    pub(crate) resulting_source_id: String,
+    pub(crate) stored_stream_id: String,
+    pub(crate) resulting_stream_id: String,
     pub(crate) routing_labels: RoutingLabelsUpdateStrategy,
     pub(crate) max_idle_duration: Duration,
     pub(crate) max_delivery_duration: Duration,
@@ -34,8 +34,8 @@ impl Default for JobConfiguration {
             pts_discrepancy_fix_duration: Duration::from_secs_f64(1_f64 / STD_FPS),
             min_duration: Duration::from_secs_f64(1_f64 / STD_FPS),
             max_duration: Duration::from_secs_f64(1_f64 / STD_FPS),
-            stored_source_id: String::new(),
-            resulting_source_id: String::new(),
+            stored_stream_id: String::new(),
+            resulting_stream_id: String::new(),
             routing_labels: RoutingLabelsUpdateStrategy::Bypass,
             max_idle_duration: Duration::from_secs(10),
             max_delivery_duration: Duration::from_secs(10),
@@ -51,7 +51,7 @@ impl JobConfigurationBuilder {
         if c.min_duration > c.max_duration {
             bail!("Min PTS delta is greater than max PTS delta!");
         }
-        if c.stored_source_id.is_empty() || c.resulting_source_id.is_empty() {
+        if c.stored_stream_id.is_empty() || c.resulting_stream_id.is_empty() {
             bail!("Stored source id or resulting source id is empty!");
         }
         Ok(c)

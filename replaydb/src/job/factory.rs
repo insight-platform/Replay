@@ -64,7 +64,7 @@ where
             .lock()
             .await
             .get_first(
-                &query.configuration.stored_source_id,
+                &query.configuration.stored_stream_id,
                 anchor_uuid,
                 query.offset.clone(),
             )
