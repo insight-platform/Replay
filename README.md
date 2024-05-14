@@ -23,6 +23,11 @@ Replay is an advanced storage providing features required for non-linear compute
 Replay is implemented with Rust and RocksDB. It allows delivering video with low latency and high
 throughput. Replay can be deployed on edge devices and in the cloud on ARM or X86 devices.
 
+## Sample
+
+This [sample](samples/file_restreaming) shows how to ingest video file to Replay and then re-stream it to AO-RTSP with
+REST API.
+
 ## Documentation
 
 The documentation is available at [GitHub Pages](https://insight-platform.github.io/Replay/).
