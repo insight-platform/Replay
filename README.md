@@ -2,6 +2,8 @@
 
 Collect video streams and re-stream them effortlessly with REST API.
 
+![](assets/replay_usage_diagram.png)
+
 ## Features
 
 Replay is an advanced storage providing features required for non-linear computer vision and video analytics:
