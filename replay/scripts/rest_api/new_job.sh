@@ -33,13 +33,13 @@ cat <<EOF
     },
     "min_duration": {
       "secs": 0,
-      "nanos": 60000000
+      "nanos": 10000000
     },
     "max_duration": {
       "secs": 0,
       "nanos": 103333333
     },
-    "stored_stream_id": "video",
+    "stored_stream_id": "in-video",
     "resulting_stream_id": "vod-video-1",
     "routing_labels": "Bypass",
     "max_idle_duration": {
