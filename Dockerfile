@@ -14,5 +14,6 @@ ENV DB_PATH=/opt/rocksdb
 ENV RUST_LOG=info
 
 EXPOSE 8080
+EXPOSE 5555
 
 CMD ["/opt/bin/replay", "/opt/etc/config.json"]
