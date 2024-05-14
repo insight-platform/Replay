@@ -8,11 +8,11 @@ use std::time::Duration;
 #[derive(Debug, Serialize, Deserialize, Clone, Builder)]
 #[builder(default)]
 pub struct JobConfiguration {
-    pub(crate) pts_sync: bool,
+    pub(crate) ts_sync: bool,
     pub(crate) skip_intermediary_eos: bool,
     pub(crate) send_eos: bool,
-    pub(crate) stop_on_incorrect_pts: bool,
-    pub(crate) pts_discrepancy_fix_duration: Duration,
+    pub(crate) stop_on_incorrect_ts: bool,
+    pub(crate) ts_discrepancy_fix_duration: Duration,
     pub(crate) min_duration: Duration,
     pub(crate) max_duration: Duration,
     pub(crate) stored_stream_id: String,
@@ -27,11 +27,11 @@ pub struct JobConfiguration {
 impl Default for JobConfiguration {
     fn default() -> Self {
         Self {
-            pts_sync: false,
+            ts_sync: false,
             skip_intermediary_eos: false,
             send_eos: false,
-            stop_on_incorrect_pts: false,
-            pts_discrepancy_fix_duration: Duration::from_secs_f64(1_f64 / STD_FPS),
+            stop_on_incorrect_ts: false,
+            ts_discrepancy_fix_duration: Duration::from_secs_f64(1_f64 / STD_FPS),
             min_duration: Duration::from_secs_f64(1_f64 / STD_FPS),
             max_duration: Duration::from_secs_f64(1_f64 / STD_FPS),
             stored_stream_id: String::new(),

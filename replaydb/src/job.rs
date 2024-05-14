@@ -264,7 +264,7 @@ where
                 self.uuid_id, ts, last_ts
             );
             log::warn!(target: "replay::db::job::check_ts_decrease", "{}", &message);
-            if self.configuration.stop_on_incorrect_pts {
+            if self.configuration.stop_on_incorrect_ts {
                 log::warn!("Job will be finished due to a discrepant TS!");
                 bail!("{}", message);
             }
@@ -337,8 +337,8 @@ where
     }
 
     pub async fn run_until_complete(&mut self) -> Result<()> {
-        if self.configuration.pts_sync {
-            self.run_pts_synchronized_until_complete().await?;
+        if self.configuration.ts_sync {
+            self.run_ts_synchronized_until_complete().await?;
         } else {
             self.run_fast_until_complete().await?;
         }
@@ -375,7 +375,7 @@ where
         Ok(())
     }
 
-    async fn run_pts_synchronized_until_complete(&mut self) -> Result<()> {
+    async fn run_ts_synchronized_until_complete(&mut self) -> Result<()> {
         let mut last_video_frame_sent = Instant::now();
         let (prev_message, data) = self.read_message().await?;
         if !prev_message.is_video_frame() {
@@ -420,7 +420,7 @@ where
                     .as_video_frame()
                     .unwrap();
                 if self.check_ts_decrease(&message)? {
-                    self.configuration.pts_discrepancy_fix_duration
+                    self.configuration.ts_discrepancy_fix_duration
                 } else {
                     let pts_diff = best_ts(&videoframe) - best_ts(&prev_video_frame);
                     let pts_diff = pts_diff.max(0) as f64;
@@ -851,7 +851,7 @@ mod tests {
             .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
             .stored_stream_id("source_id".to_string())
             .resulting_stream_id("resulting_id".to_string())
-            .stop_on_incorrect_pts(true)
+            .stop_on_incorrect_ts(true)
             .build_and_validate()?;
 
         let mut job = Job::new(
@@ -932,7 +932,7 @@ mod tests {
             .routing_labels(RoutingLabelsUpdateStrategy::Bypass)
             .stored_stream_id("source_id".to_string())
             .resulting_stream_id("resulting_id".to_string())
-            .stop_on_incorrect_pts(true)
+            .stop_on_incorrect_ts(true)
             .max_delivery_duration(Duration::from_millis(300))
             .build_and_validate()?;
 
@@ -1056,7 +1056,7 @@ mod tests {
             None,
         )?;
         let now = tokio::time::Instant::now();
-        job.run_pts_synchronized_until_complete().await?;
+        job.run_ts_synchronized_until_complete().await?;
         assert!(
             now.elapsed() > Duration::from_millis(n * 33)
                 && now.elapsed() < Duration::from_millis((n + 1) * 33)
@@ -1164,7 +1164,7 @@ mod tests {
         )?;
 
         let now = tokio::time::Instant::now();
-        job.run_pts_synchronized_until_complete().await?;
+        job.run_ts_synchronized_until_complete().await?;
         assert!(
             now.elapsed() > Duration::from_millis((message_count - 1) * 33)
                 && now.elapsed() < Duration::from_millis((message_count + 1) * 33)
@@ -1222,7 +1222,7 @@ mod tests {
             None,
         )?;
         let now = tokio::time::Instant::now();
-        job.run_pts_synchronized_until_complete().await?;
+        job.run_ts_synchronized_until_complete().await?;
         //dbg!(now.elapsed());
         assert!(
             now.elapsed() > Duration::from_millis(n * frame_duration)
@@ -1294,7 +1294,7 @@ mod tests {
             None,
         )?;
         let now = tokio::time::Instant::now();
-        job.run_pts_synchronized_until_complete().await?;
+        job.run_ts_synchronized_until_complete().await?;
         //dbg!(now.elapsed());
         // the first frame is sent instantly, that is why we have n - 1 here
         assert!(

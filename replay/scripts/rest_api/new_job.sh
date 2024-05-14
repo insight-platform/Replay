@@ -23,11 +23,11 @@ cat <<EOF
     "inflight_ops": 100
   },
   "configuration": {
-    "pts_sync": true,
+    "ts_sync": true,
     "skip_intermediary_eos": false,
     "send_eos": true,
-    "stop_on_incorrect_pts": false,
-    "pts_discrepancy_fix_duration": {
+    "stop_on_incorrect_ts": false,
+    "ts_discrepancy_fix_duration": {
       "secs": 0,
       "nanos": 33333333
     },
