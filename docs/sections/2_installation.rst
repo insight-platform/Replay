@@ -12,3 +12,13 @@ Docker Images for ARM64 and X86_64 are available on GitHub Container Registry:
 
 - `replay-x86 <https://github.com/insight-platform/Replay/pkgs/container/replay-x86>`_ - for X86_64 CPUs;
 - `replay-arm64 <https://github.com/insight-platform/Replay/pkgs/container/replay-arm64>`_ - for ARM64 CPUs.
+
+Quick Installation
+------------------
+
+TODO
+
+Configuration Parameters
+------------------------
+
+TODO
