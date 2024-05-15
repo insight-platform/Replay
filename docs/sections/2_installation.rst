@@ -245,3 +245,12 @@ Configuration File Parameters
       - The time-to-live for data in the RocksDB storage.
       - ``{"secs": 60, "nanos": 0}``
       - ``{"secs": 30, "nanos": 0}``
+
+Deployment Best Practices
+-------------------------
+
+When you deploy Replay as a terminal node, the service bottlenecks are mostly related to the underlying storage. You can use any type of communication socket like ``sub``, ``router``, ``rep`` as long as your storage keeps up with the load. The default configuration is OK for most cases.
+
+When you deploy Replay as an intermediate node, the service can experience bottlenecks related to the downstream nodes. Thus we recommend placing a buffer adapter between Replay and the next node, if the next node can experience performance drops. Such situations may require careful maintenance and configuration modification, so using a `buffer adapter <https://docs.savant-ai.io/develop/savant_101/10_adapters.html#buffer-bridge-adapter>`_ is a failsafe option.
+
+This is also a "must go" option when the downstream node can reload or experience network unavailability.
