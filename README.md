@@ -2,7 +2,7 @@
 
 Collect video streams and re-stream them effortlessly with REST API.
 
-![](assets/replay_usage_diagram.png)
+![](docs/_static/replay_usage_diagram.png)
 
 ## Features
 

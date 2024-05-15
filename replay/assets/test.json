@@ -17,7 +17,7 @@
     }
   },
   "in_stream": {
-    "url": "router+bind:tcp://127.0.0.1:5555",
+    "url": "router+bind:tcp://0.0.0.0:5555",
     "receive_timeout": {
       "secs": 1,
       "nanos": 0
@@ -27,11 +27,10 @@
       "none": null
     },
     "source_cache_size": 1000,
-    "fix_ipc_permissions": 511,
     "inflight_ops": 100
   },
   "out_stream": {
-    "url": "pub+bind:tcp://127.0.0.1:5556",
+    "url": "pub+bind:tcp://0.0.0.0:5556",
     "send_timeout": {
       "secs": 1,
       "nanos": 0

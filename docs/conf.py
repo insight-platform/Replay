@@ -23,6 +23,9 @@ extensions = [
 
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 html_static_path = ['_static']
+html_css_files = [
+    'css/custom.css',
+]
 
 autosummary_generate = True
 autosummary_imported_members = True

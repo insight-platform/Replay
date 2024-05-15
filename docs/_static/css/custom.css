@@ -1,0 +1,42 @@
+/* wrap text in tables */
+.wy-table-responsive table td, .wy-table-responsive table th {
+    white-space: normal;
+    vertical-align: top !important;
+}
+
+.wy-nav-content {
+    max-width: 70% !important;
+}
+
+.rst-content .code-block-caption {
+    font-style: normal !important;
+    text-align: left !important;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    margin-top: 1em;
+}
+
+.rst-versions {
+    display: none;
+}
+.rst-versions.shift-up {
+    overflow-y: hidden;
+}
+
+/* alerts */
+.alert {}
+
+.alert-checkbox {
+  display: none;
+}
+
+:checked + .alert {
+  display: none;
+}
+
+.alert .fa-close {
+  float: right;
+  padding-left: 10px;
+  cursor: pointer;
+}
