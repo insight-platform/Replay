@@ -139,7 +139,7 @@ The above-mentioned configuration file is used by default, when you launch Repla
       -v $(pwd)/config.json:/opt/config.json \
       ghcr.io/insight-platform/replay-x86:main /opt/config.json
 
-Configuration File Parameters
+Configuration Parameters
 -----------------------------
 
 .. list-table:: Parameters
@@ -245,6 +245,11 @@ Configuration File Parameters
       - The time-to-live for data in the RocksDB storage.
       - ``{"secs": 60, "nanos": 0}``
       - ``{"secs": 30, "nanos": 0}``
+
+Environment Variables in Configuration File
+-------------------------------------------
+
+You can use environment variables in the configuration file. The syntax is ``${VAR_NAME:-default_value}``. If the environment variable is not set, the default value will be used.
 
 Deployment Best Practices
 -------------------------
