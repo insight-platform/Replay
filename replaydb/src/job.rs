@@ -30,8 +30,11 @@ const STD_FPS: f64 = 30.0;
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub enum RoutingLabelsUpdateStrategy {
     #[default]
+    #[serde(rename = "bypass")]
     Bypass,
+    #[serde(rename = "replace")]
     Replace(Vec<String>),
+    #[serde(rename = "append")]
     Append(Vec<String>),
 }
 

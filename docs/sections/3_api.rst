@@ -169,7 +169,7 @@ Creates a new job. Returns the job UUID.
         },
         "stored_stream_id": "in-video",
         "resulting_stream_id": "vod-video-1",
-        "routing_labels": "Bypass",
+        "routing_labels": "bypass",
         "max_idle_duration": {
           "secs": 10,
           "nanos": 0
@@ -360,7 +360,12 @@ The job will never stop.
 Time-synchronized And Fast Jobs
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-TODO
+With Replay, you can re-stream with different speed and time synchronization. The system can handle the following cases:
+
+- as-fast-as-possible re-streaming (in most cases it is limited by a receiver);
+- time-synchronized re-streaming (sends according to encoded PTS/DTS labels);
+- minimal frame duration re-streaming (speed decrease);
+- maximum frame duration re-streaming (speed increase).
 
 Egress FPS Control
 ^^^^^^^^^^^^^^^^^^

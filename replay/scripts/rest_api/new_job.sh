@@ -41,7 +41,7 @@ cat <<EOF
     },
     "stored_stream_id": "in-video",
     "resulting_stream_id": "vod-video-1",
-    "routing_labels": "Bypass",
+    "routing_labels": "bypass",
     "max_idle_duration": {
       "secs": 10,
       "nanos": 0
