@@ -51,7 +51,7 @@ cat <<EOF
       "nanos": 0
     },
     "send_metadata_only": false,
-    "user_attributes": {
+    "labels": {
         "namespace": "key"
     }
   },

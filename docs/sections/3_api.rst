@@ -179,7 +179,7 @@ Creates a new job. Returns the job UUID.
           "nanos": 0
         },
         "send_metadata_only": false,
-        "user_attributes": {
+        "labels": {
             "namespace": "key"
         }
       },
@@ -225,13 +225,33 @@ Creates a new job. Returns the job UUID.
     Q=$(query $1)
     curl -X PUT -H "Content-Type: application/json" -d "$Q" http://127.0.0.1:8080/api/v1/job | json_pp
 
-Attributes
+Augmenting Attributes
+^^^^^^^^^^^^^^^^^^^^^
+
+Attributes are defined in JSON format matching savant-rs `Attribute` struct. For details, please take a look at the `Attribute` struct in the `savant-rs <https://insight-platform.github.io/savant-rs/modules/savant_rs/primitives.html#savant_rs.primitives.Attribute>`_ documentation and the relevant `sample <https://github.com/insight-platform/savant-rs/blob/main/python/primitives/attribute.py>`_.
+
+Attributes are passed to the job automatically ingested in every frame metadata to give the stream receiver extra knowledge about the job. For example, you can pass the track ID for the object you want to handle additionally.
+
+Job Labels
 ^^^^^^^^^^
 
-TODO
+These labels are used for the user need. When you have a lot of concurrent jobs you may want to associate some metadata with them.
+
+.. code-block:: javascript
+
+    "labels": {
+      "key": "value"
+    }
+
+When you request the information about the running or stopped jobs, you can effectively distinguish them based on them.
 
 Offset
 ^^^^^^
+
+Offset defines the starting point of the job. It is required to shift back in time from the anchor keyframe. The offset can be defined in two ways:
+
+- number of fully-decodable blocks;
+- number of seconds.
 
 Number of Blocks
 ~~~~~~~~~~~~~~~~
@@ -336,11 +356,6 @@ Never
     "never"
 
 The job will never stop.
-
-Job User Attributes
-^^^^^^^^^^^^^^^^^^^
-
-TODO
 
 Time-synchronized And Fast Jobs
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

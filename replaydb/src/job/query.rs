@@ -68,7 +68,7 @@ mod tests {
             .max_duration(Duration::from_secs_f64(1_f64 / 30_f64))
             .stored_stream_id("stored_source_id".to_string())
             .resulting_stream_id("resulting_source_id".to_string())
-            .user_attributes(Some(
+            .labels(Some(
                 vec![("key".to_string(), "value".to_string())]
                     .into_iter()
                     .collect(),
