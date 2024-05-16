@@ -56,7 +56,7 @@ cat <<EOF
     }
   },
   "stop_condition": {
-    "frame_count": 10000
+    "frame_count": 10
   },
   "anchor_keyframe": "$ANCHOR_KEYFRAME",
   "offset": {
@@ -95,4 +95,4 @@ EOF
 }
 
 Q=$(query $1)
-curl -X PUT -H "Content-Type: application/json" -d "$Q" http://127.0.0.1:8080/api/v1/job | json_pp
+curl -X PUT -H "Content-Type: application/json" -d "$Q" http://127.0.0.1:8080/api/v1/job

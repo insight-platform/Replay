@@ -17,8 +17,8 @@ pub enum JobStopCondition {
     FrameCount(usize),
     #[serde(rename = "key_frame_count")]
     KeyFrameCount(usize),
-    #[serde(rename = "pts_delta_sec")]
-    PTSDeltaSec {
+    #[serde(rename = "ts_delta_sec")]
+    TSDeltaSec {
         max_delta_sec: f64,
         #[serde(skip)]
         first_pts: Option<i64>,
@@ -52,7 +52,7 @@ impl JobStopCondition {
     }
 
     pub fn pts_delta_sec(max_delta: f64) -> Self {
-        JobStopCondition::PTSDeltaSec {
+        JobStopCondition::TSDeltaSec {
             max_delta_sec: max_delta,
             first_pts: None,
         }
@@ -93,7 +93,7 @@ impl JobStopCondition {
                 }
                 Ok(false)
             }
-            JobStopCondition::PTSDeltaSec {
+            JobStopCondition::TSDeltaSec {
                 max_delta_sec,
                 first_pts,
             } => {
@@ -196,5 +196,30 @@ mod tests {
         thread::sleep(Duration::from_millis(600));
         assert!(stop_condition.check(&frame.to_message())?);
         Ok(())
+    }
+
+    #[test]
+    fn dump_all_stop_conditions() {
+        let stop_conditions = vec![
+            JobStopCondition::LastFrame {
+                uuid: "uuid".to_string(),
+                uuid_u128: None,
+            },
+            JobStopCondition::FrameCount(1),
+            JobStopCondition::KeyFrameCount(1),
+            JobStopCondition::TSDeltaSec {
+                max_delta_sec: 1.0,
+                first_pts: None,
+            },
+            JobStopCondition::RealTimeDelta {
+                configured_delta_ms: 1,
+                initial_ts: None,
+            },
+            JobStopCondition::Now,
+            JobStopCondition::Never,
+        ];
+        for stop_condition in stop_conditions {
+            println!("{}", serde_json::to_string_pretty(&stop_condition).unwrap());
+        }
     }
 }

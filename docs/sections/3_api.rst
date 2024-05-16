@@ -1,6 +1,13 @@
 REST API
 ============
 
+Frame UUID
+----------
+
+In Savant, every frame has strictly increasing UUID, constructed as UUIDv7. The UUID is created when the frame is created and most processing nodes just reuse it without alteration. It allows us to know precisely the time of the frame creation and the order of the frames.
+
+Replay uses frame UUIDs to navigate the video stream. The UUIDs are used to find keyframes, create jobs and update job stop conditions.
+
 Status
 ------
 
@@ -228,10 +235,87 @@ Offset
 
 TODO
 
-Stop Condition
-^^^^^^^^^^^^^^
+Job Stop Condition JSON Body
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-TODO
+Last Frame
+~~~~~~~~~~
+
+.. code-block:: javascript
+
+    {
+      "last_frame": {
+        "uuid": <UUID>,
+      }
+    }
+
+When the next frame UUID is "larger" than the specified, the job will stop. Because the system uses strictly increasing UUIDv7 for frame UUIDs, you can construct a UUIDv7 with the desired timestamp to match the timestamp.
+
+Frame Count
+~~~~~~~~~~~
+
+.. code-block:: javascript
+
+    {
+      "frame_count": <COUNT>
+    }
+
+The job will stop when the specified number of frames is processed.
+
+Keyframe Count
+~~~~~~~~~~~~~~
+
+.. code-block:: javascript
+
+    {
+      "key_frame_count": <COUNT>
+    }
+
+The job will stop when the specified number of keyframes is processed.
+
+Timestamp Delta
+~~~~~~~~~~~~~~~
+
+.. code-block:: javascript
+
+    {
+      "ts_delta_sec": {
+        "max_delta_sec": <float, seconds> // 1.0
+      }
+    }
+
+The job will stop when the encoded timestamp delta between the last frame and the current frame is larger than the specified value.
+
+Realtime Delta
+~~~~~~~~~~~~~~
+
+.. code-block:: javascript
+
+    {
+      "real_time_delta_ms": {
+        "configured_delta_ms": <int, milliseconds> // 1000
+      }
+    }
+
+The job will stop when the job live time is larger than the specified value.
+
+Now
+~~~
+
+.. code-block:: javascript
+
+    "now"
+
+The job will stop immediately.
+
+Never
+~~~~~
+
+.. code-block:: javascript
+
+    "never"
+
+The job will never stop.
 
 Job User Attributes
 ^^^^^^^^^^^^^^^^^^^
@@ -262,6 +346,41 @@ List the running job matching the given UUID.
 
     JOB_UUID=<JOB_UUID> curl http://127.0.0.1:8080/api/v1/job/$JOB_UUID | json_pp
 
+.. list-table::
+    :header-rows: 1
+
+    * - Parameter
+      - Description
+      - Extra
+      - Description
+    * - Method
+      - GET
+      - ``/api/v1/job/<jobid>``
+      -
+    * - Response OK
+      - 200 OK
+      - ``{...}``
+      - see JSON response below
+    * - Response Error
+      - 500 Internal Server Error
+      - ``{"error" => "Reason"}``
+      - problem description
+
+JSON Body:
+
+.. code-block:: javascript
+
+    {
+       "jobs" : [
+          [
+             <jobid>,
+             { /* job configuration */ },
+             { /* job stop condition */}
+          ], ...
+       ]
+    }
+
+
 List Jobs
 ---------
 
@@ -270,6 +389,41 @@ List all running jobs.
 .. code-block:: bash
 
     curl http://127.0.0.1:8080/api/v1/job | json_pp
+
+.. list-table::
+    :header-rows: 1
+
+    * - Parameter
+      - Description
+      - Extra
+      - Description
+    * - Method
+      - GET
+      - ``/api/v1/job``
+      -
+    * - Response OK
+      - 200 OK
+      - ``{...}``
+      - see JSON response below
+    * - Response Error
+      - 500 Internal Server Error
+      - ``{"error" => "Reason"}``
+      - problem description
+
+JSON Body:
+
+.. code-block:: javascript
+
+    {
+       "jobs" : [
+          [
+             <jobid>,
+             { /* job configuration */ },
+             { /* job stop condition */}
+          ], ...
+       ]
+    }
+
 
 List Stopped Jobs
 -----------------
@@ -280,6 +434,42 @@ List all stopped but not yet evicted jobs.
 
     curl http://127.0.0.1:8080/api/v1/job/stopped | json_pp
 
+.. list-table::
+    :header-rows: 1
+
+    * - Parameter
+      - Description
+      - Extra
+      - Description
+    * - Method
+      - GET
+      - ``/api/v1/job/stopped``
+      -
+    * - Response OK
+      - 200 OK
+      - ``{...}``
+      - see JSON response below
+    * - Response Error
+      - 500 Internal Server Error
+      - ``{"error" => "Reason"}``
+      - problem description
+
+
+200 OK JSON Body:
+
+.. code-block:: javascript
+
+    {
+       "stopped_jobs" : [
+          [
+             <jobid>,
+             { /* job configuration */ },
+             null | "When error, termination reason"
+          ], ...
+       ]
+    }
+
+
 Delete Job
 ----------
 
@@ -288,6 +478,27 @@ Forcefully deletes the running job matching the given UUID.
 .. code-block:: bash
 
     JOB_UUID=<JOB_UUID> curl -X DELETE http://127.0.0.1:8080/api/v1/job/$JOB_UUID | json_pp
+
+.. list-table::
+    :header-rows: 1
+
+    * - Parameter
+      - Description
+      - Extra
+      - Description
+    * - Method
+      - DELETE
+      - ``/api/v1/job/<jobid>``
+      -
+    * - Response OK
+      - 200 OK
+      - ``"ok"``
+      - job was deleted
+    * - Response Error
+      - 500 Internal Server Error
+      - ``{"error" => "Reason"}``
+      - problem description
+
 
 Update Job Stop Condition
 -------------------------
@@ -300,3 +511,28 @@ Updates the stop condition of the running job matching the given UUID.
          --header "Content-Type: application/json" -X PATCH \
          --data '{"frame_count": 10000}' \
          http://127.0.0.1:8080/api/v1/job/$JOB_UUID/stop-condition | json_pp
+
+.. list-table::
+    :header-rows: 1
+
+    * - Parameter
+      - Description
+      - Extra
+      - Description
+    * - Method
+      - PATCH
+      - ``/api/v1/job/<jobid>/stop-condition``
+      -
+    * - Request
+      - JSON
+      - ``{...}``
+      - see the `Job Stop Condition JSON Body`_ section in the `Create New Job`_ section
+    * - Response OK
+      - 200 OK
+      - ``"ok"``
+      - stop condition was updated
+    * - Response Error
+      - 500 Internal Server Error
+      - ``{"error" => "Reason"}``
+      - problem description
+
