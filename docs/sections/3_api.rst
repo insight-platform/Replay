@@ -365,10 +365,22 @@ With Replay, you can re-stream with different speed and time synchronization. Th
 - as-fast-as-possible re-streaming (in most cases it is limited by a receiver);
 - time-synchronized re-streaming (sends according to encoded PTS/DTS labels and time corrections);
 
-Regardless of the mode, the system never changes encoded PTS and DTS labels, Replay just re-streams regulating frame delivery.
+.. note::
+
+    Regardless of the mode, the system never changes encoded PTS and DTS labels, Replay just re-streams regulating frame delivery.
+
+The mode is defined by the following parameter:
+
+.. code-block:: javascript
+
+    "ts_sync": true
+
+When ``ts_sync`` is set to ``true``, the system will re-stream the video in time-synchronized mode. The system will deliver frames according to the encoded timestamps.
+
+When ``ts_sync`` is set to ``false``, the system will re-stream the video as fast as possible.
 
 Egress FPS Control And Correction
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 TODO
 
