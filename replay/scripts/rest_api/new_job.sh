@@ -60,7 +60,7 @@ cat <<EOF
   },
   "anchor_keyframe": "$ANCHOR_KEYFRAME",
   "offset": {
-    "Blocks": 5
+    "blocks": 5
   },
   "attributes": [
     {

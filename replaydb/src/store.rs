@@ -28,7 +28,9 @@ pub fn gen_properly_filled_frame() -> VideoFrameProxy {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub enum JobOffset {
+    #[serde(rename = "blocks")]
     Blocks(usize),
+    #[serde(rename = "seconds")]
     Seconds(f64),
 }
 

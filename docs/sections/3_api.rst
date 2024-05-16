@@ -188,7 +188,7 @@ Creates a new job. Returns the job UUID.
       },
       "anchor_keyframe": "$ANCHOR_KEYFRAME",
       "offset": {
-        "Blocks": 5
+        "blocks": 5
       },
       "attributes": [
         {
@@ -233,7 +233,27 @@ TODO
 Offset
 ^^^^^^
 
-TODO
+Number of Blocks
+~~~~~~~~~~~~~~~~
+
+.. code-block:: javascript
+
+    {
+      "blocks": <int>
+    }
+
+Rewinds to the specified number of blocks (keyframes) before the anchor keyframe.
+
+Number of Seconds
+~~~~~~~~~~~~~~~~~
+
+.. code-block:: javascript
+
+    {
+      "seconds": <float>
+    }
+
+Rewinds to the specified number of seconds before the anchor keyframe but always starts from the keyframe.
 
 Job Stop Condition JSON Body
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
