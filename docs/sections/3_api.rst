@@ -363,12 +363,12 @@ Time-synchronized And Fast Jobs
 With Replay, you can re-stream with different speed and time synchronization. The system can handle the following cases:
 
 - as-fast-as-possible re-streaming (in most cases it is limited by a receiver);
-- time-synchronized re-streaming (sends according to encoded PTS/DTS labels);
-- minimal frame duration re-streaming (speed decrease);
-- maximum frame duration re-streaming (speed increase).
+- time-synchronized re-streaming (sends according to encoded PTS/DTS labels and time corrections);
 
-Egress FPS Control
-^^^^^^^^^^^^^^^^^^
+Regardless of the mode, the system never changes encoded PTS and DTS labels, Replay just re-streams regulating frame delivery.
+
+Egress FPS Control And Correction
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 TODO
 
