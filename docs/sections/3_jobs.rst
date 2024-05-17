@@ -102,4 +102,4 @@ Jobs are very lightweight, thus you can have dozens or even hundreds of jobs run
 Job Persistence
 ---------------
 
-Currently, jobs are not persistent. When the service is reloaded, all the running jobs are lost.
+Currently, jobs are not persistent. When the service is reloaded, all the running jobs are lost. Users must implement job persistence separately.
