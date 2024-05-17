@@ -1,5 +1,5 @@
 Re-Streaming Jobs
-==============================
+=================
 
 The re-streaming jobs implement dynamic activities (sources in the Savant terminology) transferring data from the Replay storage to pipelines and sinks. Jobs are spawned by user on demand with Restful API.
 
@@ -79,3 +79,14 @@ Attributes
 ----------
 
 Attributes are extra Savant attributes injected into every metadata record. They can be used to add extra information to the metadata, which can be used by the sink or other services.
+
+Job Concurrency
+===============
+
+As many jobs can run concurrently and send data to the same sinks. You need to carefully map stored source IDs to the consumer expected source IDs. This is required to avoid data corruption and to ensure that the data is delivered to the sink in the correct order.
+
+.. warning::
+
+    There is no way to limit jobs concurrency: developers must implement it separately. For Replay, every job is completely independent.
+
+Jobs are very lightweight, thus you can have dozens or even hundreds of jobs running concurrently. However, you need to ensure that the sinks can handle the load. Also, every job reads data from the storage, so the storage must be able to handle the load.
