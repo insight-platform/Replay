@@ -71,6 +71,10 @@ The following stop conditions are supported:
 - encoded timestamp delta between the first and the last frame;
 - real-time duration (when jobs works longer than the specified number of milliseconds).
 
+When the job is stopped by reaching the specified stop condition, it is considered as successfully completed, otherwise it is considered as failed.
+
+Users can update job stop conditions for running jobs with REST API.
+
 Attributes
 ----------
 
