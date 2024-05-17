@@ -24,7 +24,7 @@ Anchor Frame
 
 In Savant, every frame has strictly increasing UUID, constructed as UUIDv7. UUIDv7 is based on millisecond-precision timestamp allowing to know the exact time of the frame creation and the order of the frames. The UUID is generated when the frame is first encountered, and most processing nodes reuse its UUID without modification.
 
-Replay uses frame UUIDs to navigate the video stream. UUIDs are used to find keyframes, create jobs and update job stop conditions. Every frame has encoded information about the previous keyframe UUID, thus allowing to navigate the stream to a frame which guarantees the correct decoding of the frame sequence.
+Replay uses frame UUIDs to navigate the video stream. UUIDs are used to find keyframes, create jobs and update job stop conditions. Every frame has encoded information about the `previous keyframe <https://insight-platform.github.io/savant-rs/modules/savant_rs/primitives.html#savant_rs.primitives.VideoFrame.previous_keyframe_uuid>`__ UUID, thus allowing to navigate the stream to a frame which guarantees the correct decoding of the frame sequence.
 
 **Anchor Frame** is a keyframe UUID which is used as a job starting point. It can be corrected with the offset parameter to look backward, which is often required to start processing a little earlier than the moment of interest.
 
@@ -89,4 +89,13 @@ As many jobs can run concurrently and send data to the same sinks. You need to c
 
     There is no way to limit jobs concurrency: developers must implement it separately. For Replay, every job is completely independent.
 
+.. note::
+
+    To avoid concurrent jobs you can poll the current job status with the REST API. If the job is stopped you can launch a new job.
+
 Jobs are very lightweight, thus you can have dozens or even hundreds of jobs running concurrently. However, you need to ensure that the sinks can handle the load. Also, every job reads data from the storage, so the storage must be able to handle the load.
+
+Job Persistence
+---------------
+
+Currently, jobs are not persistent. When the service is reloaded, all the running jobs are lost.
