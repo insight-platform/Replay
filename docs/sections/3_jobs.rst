@@ -28,6 +28,10 @@ Replay uses frame UUIDs to navigate the video stream. UUIDs are used to find key
 
 **Anchor Frame** is a keyframe UUID which is used as a job starting point. It can be corrected with the offset parameter to look backward, which is often required to start processing a little earlier than the moment of interest.
 
+.. warning::
+
+    MJPEG and image streams have every frame marked as a keyframe. Thus streams create significantly more indexing information in Replay and thus can require more resources to process.
+
 Job Offset
 ----------
 
