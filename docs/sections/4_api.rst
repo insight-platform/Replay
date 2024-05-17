@@ -1,13 +1,6 @@
 REST API
 ============
 
-Frame UUID
-----------
-
-In Savant, every frame has strictly increasing UUID, constructed as UUIDv7. The UUID is created when the frame is created and most processing nodes just reuse it without alteration. It allows us to know precisely the time of the frame creation and the order of the frames.
-
-Replay uses frame UUIDs to navigate the video stream. The UUIDs are used to find keyframes, create jobs and update job stop conditions.
-
 Status
 ------
 

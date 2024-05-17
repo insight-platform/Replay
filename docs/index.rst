@@ -20,4 +20,5 @@ Replay is an advanced storage providing features required for non-linear compute
    sections/0_introduction
    sections/1_platforms
    sections/2_installation
-   sections/3_api
+   sections/3_jobs
+   sections/4_api
