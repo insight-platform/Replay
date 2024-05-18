@@ -26,3 +26,4 @@ Cargo.lock
 /docs/source/generated
 /docs/_build
 **/data
+**/*.mp4

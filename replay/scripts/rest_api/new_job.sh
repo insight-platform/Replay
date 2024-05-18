@@ -55,9 +55,7 @@ cat <<EOF
         "namespace": "key"
     }
   },
-  "stop_condition": {
-    "frame_count": 10
-  },
+  "stop_condition": "never",
   "anchor_keyframe": "$ANCHOR_KEYFRAME",
   "offset": {
     "blocks": 5

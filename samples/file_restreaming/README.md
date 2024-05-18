@@ -7,6 +7,8 @@ This sample shows how to ingest video file to Replay and then re-stream it to AO
 Run Replay with the following command (X86 version):
 
 ```bash
+docker pull ghcr.io/insight-platform/replay-x86:main
+
 docker run -it --rm \
   --network host \
   -v $(pwd)/replay_config.json:/opt/etc/config.json \
@@ -19,6 +21,8 @@ docker run -it --rm \
 First, we just launch to have it displaying stub because no actual re-streaming happens.
 
 ```bash
+docker pull ghcr.io/insight-platform/savant-adapters-deepstream:latest
+
 docker run --rm -it --name sink-always-on-rtsp \
     --gpus=all \
     --network="host" \

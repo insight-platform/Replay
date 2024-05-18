@@ -3,3 +3,4 @@
 Dockerfile
 Cargo.lock
 **/data
+**/*.mp4
