@@ -223,7 +223,7 @@ Augmenting Attributes
 
 Attributes are defined in JSON format matching savant-rs `Attribute` struct. For details, please take a look at the `Attribute` struct in the `savant-rs <https://insight-platform.github.io/savant-rs/modules/savant_rs/primitives.html#savant_rs.primitives.Attribute>`_ documentation and the relevant `sample <https://github.com/insight-platform/savant-rs/blob/main/python/primitives/attribute.py>`_.
 
-Attributes are passed to the job automatically ingested in every frame metadata to give the stream receiver extra knowledge about the job. For example, you can pass the track ID for the object you want to handle additionally.
+Attributes, passed to the job, automatically ingested in every frame metadata to provide the stream receiver with extra knowledge about the job. For example, you can pass the track ID for the object you want to handle additionally.
 
 Job Labels
 ^^^^^^^^^^
