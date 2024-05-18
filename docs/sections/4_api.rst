@@ -375,12 +375,172 @@ When ``ts_sync`` is set to ``false``, the system will re-stream the video as fas
 Egress FPS Control And Correction
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-TODO
+Replay allows setting minimum, maximum, and ts discrepancy fix duration for the job. The system will deliver frames according to the specified durations. These parameters only work in time-synchronized mode.
+
+- **min duration**: prevents the system from delivering frames faster than the specified duration; even if frame encoded timestamps (PTS/DTS) are closer, the system will wait for the specified duration before delivering the next frame;
+
+- **max duration**: prevents the system from delivering frames slower than the specified duration; even if frame encoded timestamps (PTS/DTS) are further, the system will deliver the next frame after the specified duration;
+
+- **ts discrepancy fix duration**: when the system detects a non-monotonic discrepancy between the encoded timestamps, it will correct the discrepancy by delivering the frame according to the specified duration.
 
 Routing Labels
 ^^^^^^^^^^^^^^
 
-TODO
+Routing labels is a mechanism allowing mark Savant protocol packets with extra tags, helping to route them in the processing graph. Those labels are not supported by modules or sinks but can be used by a custom routing nodes, implemented by users with Savant `ClientSDK <https://docs.savant-ai.io/develop/advanced_topics/10_client_sdk.html>`__.
+
+Replay supports three policies for routing labels:
+
+Bypass
+~~~~~~
+
+.. code-block:: javascript
+
+    "routing_labels": "bypass"
+
+The system will not add any routing labels to the packets.
+
+Replace
+~~~~~~~
+
+.. code-block:: javascript
+
+    "routing_labels": { "replace": ["label1", "label2"] }
+
+The system will replace all routing labels with the specified ones.
+
+Append
+~~~~~~
+
+.. code-block:: javascript
+
+    "routing_labels": { "append": ["label1", "label2"] }
+
+The system will append the specified labels to the existing ones.
+
+All Configuration Parameters
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. list-table:: Parameters
+    :header-rows: 1
+
+    * - Parameter
+      - Description
+      - Default
+      - Example
+
+    * - ``sink``
+      - sink configuration
+      - ``{...}``
+      - ``{...}``
+    * - ``sink.url``
+      - sink URL
+      - ``pub+connect:tcp://127.0.0.1:6666``
+      - ``"dealer+connect:tcp://1.1.1.1:6666"``
+    * - ``sink.send_timeout``
+      - send timeout
+      - ``{"secs": 1, "nanos": 0}``
+      - ``{"secs": 5, "nanos": 0}``
+    * - ``sink.send_retries``
+      - send retries
+      - ``3``
+      - ``5``
+    * - ``sink.receive_timeout``
+      - receive timeout, used by ``req/rep`` for every message delivery, ``dealer/router`` for EOS delivery
+      - ``{"secs": 1, "nanos": 0}``
+      - ``{"secs": 5, "nanos": 0}``
+    * - ``sink.receive_retries``
+      - receive retries, used by ``req/rep`` for every message delivery, ``dealer/router`` for EOS delivery
+      - ``3``
+      - ``5``
+    * - ``sink.send_hwm``
+      - The high-water mark for the egress stream. This parameter is used to control backpressure. Please consult with 0MQ documentation for more details.
+      - ``1000``
+      - ``500``
+    * - ``sink.receive_hwm``
+      - The high-water mark for the egress stream. This parameter is used to control backpressure. Please consult with 0MQ documentation for more details. Change only if you are using ``req/rep`` communication.
+      - ``100``
+      - ``50``
+    * - ``sink.inflight_ops``
+      - The maximum number of inflight operations for the egress stream. This parameter is used to allow the service to endure a high load. Default value is OK for most cases.
+      - ``100``
+      - ``50``
+    * - ``configuration``
+      - job configuration
+      - ``{...}``
+      - ``{...}``
+    * - ``configuration.ts_sync``
+      - time synchronization mode, when ``true`` the system will deliver frames according to the encoded timestamps
+      - ``true``
+      - ``false``
+    * - ``configuration.skip_intermediary_eos``
+      - when ``true`` the system will not deliver EOS encountered in the stream
+      - ``false``
+      - ``true``
+    * - ``configuration.send_eos``
+      - when ``true`` the system will deliver EOS at the end of the job
+      - ``true``
+      - ``false``
+    * - ``configuration.stop_on_incorrect_ts``
+      - when ``true`` the system will stop the job when it detects incorrect timestamps (next is less than the previous), only valid when ``ts_sync`` is ``true``
+      - ``false``
+      - ``true``
+    * - ``configuration.ts_discrepancy_fix_duration``
+      - when the system detects a non-monotonic discrepancy between the encoded timestamps, it will correct the discrepancy by delivering the frame according to the specified duration, only valid when ``ts_sync`` is ``true``.
+      - ``{"secs": 0, "nanos": 33333333}``
+      - ``{"secs": 0, "nanos": 100000000}``
+    * - ``configuration.min_duration``
+      - prevents the system from delivering frames faster than the specified duration, only valid when ``ts_sync`` is ``true``.
+      - ``{"secs": 0, "nanos": 10000000}``
+      - ``{"secs": 0, "nanos": 5000000}``
+    * - ``configuration.max_duration``
+      - prevents the system from delivering frames slower than the specified duration, only valid when ``ts_sync`` is ``true``.
+      - ``{"secs": 0, "nanos": 103333333}``
+      - ``{"secs": 0, "nanos": 5000000}``
+    * - ``configuration.stored_stream_id``
+      - stream which is used to re-stream from
+      - ``"in-video"``
+      - ``"in-video"``
+    * - ``configuration.resulting_stream_id``
+      - re-streamed stream identifier
+      - ``"vod-video-1"``
+      - ``"vod-video-2"``
+    * - ``configuration.routing_labels``
+      - routing labels, used to mark Savant protocol packets with extra tags; see the `Routing Labels`_ section for more details
+      - ``"bypass"``
+      - ``"bypass"``
+    * - ``configuration.max_idle_duration``
+      - the job will stop when it does not receive frames from the storage for the specified duration
+      - ``{"secs": 10, "nanos": 0}``
+      - ``{"secs": 5, "nanos": 0}``
+    * - ``configuration.max_delivery_duration``
+      - the job will stop when it cannot deliver a frame to the sink for the specified duration
+      - ``{"secs": 10, "nanos": 0}``
+      - ``{"secs": 5, "nanos": 0}``
+    * - ``configuration.send_metadata_only``
+      - when ``true`` the system will deliver only metadata frames, without the actual video data
+      - ``false``
+      - ``true``
+    * - ``configuration.labels``
+      - job labels, used to mark the job with extra tags; see the `Job Labels`_ section for more details
+      - ``{"namespace": "key"}``
+      - ``{"namespace": "key"}``
+    * - ``stop_condition``
+      - job stop condition; see the `Job Stop Condition JSON Body`_ section for more details
+      - ``{...}``
+      - ``{...}``
+    * - ``anchor_keyframe``
+      - anchor keyframe UUID
+      - ``"018f76e3-a0b9-7f67-8f76-ab0402fda78e"``
+      - ``"018f76e3-a0b9-7f67-8f76-ab0402fda78e"``
+    * - ``offset``
+      - job offset; see the `Offset`_ section for more details
+      - ``{...}``
+      - ``{...}``
+    * - ``attributes``
+      - job attributes; see the `Augmenting Attributes`_ section for more details
+      - ``{...}``
+      - ``{...}``
+
 
 List Job
 --------

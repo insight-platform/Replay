@@ -1437,4 +1437,17 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn dump_routing_label_json_variants() -> Result<()> {
+        println!(
+            "{:?}",
+            [
+                serde_json::to_string(&RoutingLabelsUpdateStrategy::Bypass)?,
+                serde_json::to_string(&RoutingLabelsUpdateStrategy::Replace(vec![]))?,
+                serde_json::to_string(&RoutingLabelsUpdateStrategy::Append(vec![]))?
+            ]
+        );
+        Ok(())
+    }
 }
