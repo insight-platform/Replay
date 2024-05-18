@@ -1,7 +1,7 @@
 # -- Project information -----------------------------------------------------
 
 project = 'Replay'
-copyright = '2024, Ivan A. Kudriavtsev'
+copyright = '2024, BwSoft Management, LLC'
 author = 'Ivan A. Kudriavtsev'
 
 release = '0.1.0'

@@ -85,9 +85,9 @@ Attributes
 Attributes are extra Savant attributes injected into every metadata record. They can be used to add extra information to the metadata, which can be used by the sink or other services.
 
 Job Concurrency
-===============
+---------------
 
-As many jobs can run concurrently and send data to the same sinks. You need to carefully map stored source IDs to the consumer expected source IDs. This is required to avoid data corruption and to ensure that the data is delivered to the sink in the correct order.
+As many jobs can run concurrently and send data to the same sinks, you need to carefully map stored source IDs to the consumer expected source IDs. This is required to avoid data corruption and to ensure that the data is delivered to the sink in the correct order.
 
 .. warning::
 
