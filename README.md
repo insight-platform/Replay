@@ -1,6 +1,6 @@
 # Replay
 
-Collect video streams and re-stream them effortlessly with REST API.
+Collect video streams and re-stream them effortlessly with REST API for [Savant](https://github.com/insight-platform/Savant).
 
 ![](docs/_static/replay_usage_diagram.png)
 
