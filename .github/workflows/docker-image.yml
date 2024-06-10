@@ -71,6 +71,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build docker image for ${{ env.GITHUB_REF_SLUG }}
+        if: github.event_name != 'pull_request'
         uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09 # v5.0.0
         with:
           file: ${{ matrix.docker_file }}
