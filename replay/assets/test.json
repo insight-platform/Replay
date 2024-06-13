@@ -1,7 +1,7 @@
 {
   "common": {
     "pass_metadata_only": false,
-    "management_port": 8080,
+    "management_port": ${API_PORT:-8080},
     "stats_period": {
       "secs": 60,
       "nanos": 0
@@ -17,7 +17,7 @@
     }
   },
   "in_stream": {
-    "url": "router+bind:tcp://0.0.0.0:5555",
+    "url": "${IN_STREAM:-router+bind:tcp://0.0.0.0:5555}",
     "receive_timeout": {
       "secs": 1,
       "nanos": 0
@@ -27,7 +27,8 @@
       "none": null
     },
     "source_cache_size": 1000,
-    "inflight_ops": 100
+    "inflight_ops": 100,
+    "fix_ipc_permissions": 511
   },
   "out_stream": {
     "url": "pub+bind:tcp://0.0.0.0:5556",
