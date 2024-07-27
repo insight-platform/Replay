@@ -180,6 +180,10 @@ Creates a new job. Returns the job UUID.
         "frame_count": 10000
       },
       "anchor_keyframe": "$ANCHOR_KEYFRAME",
+      "anchor_wait_duration": {
+        "secs": 1,
+        "nanos": 0
+      },
       "offset": {
         "blocks": 5
       },
@@ -532,6 +536,10 @@ All Configuration Parameters
       - anchor keyframe UUID
       - ``"018f76e3-a0b9-7f67-8f76-ab0402fda78e"``
       - ``"018f76e3-a0b9-7f67-8f76-ab0402fda78e"``
+    * - ``anchor_wait_duration``
+      - defines how long the job waits for late anchor keyframes that are not yet arrived to the system
+      - ``null``
+      - ``{"secs": 1, "nanos": 0}``
     * - ``offset``
       - job offset; see the `Offset`_ section for more details
       - ``{...}``

@@ -32,6 +32,8 @@ Replay uses frame UUIDs to navigate the video stream. UUIDs are used to find key
 
     MJPEG and image streams have every frame marked as a keyframe. Thus streams create significantly more indexing information in Replay and thus can require more resources to process.
 
+In certain situations users may encounter cases when frames are not yet delivered to Replay at the moment of the job creation. In this case, the job may wait for the frame to be delivered and then start processing the stream. There is a special optional parameter in the job specification for this case.
+
 Job Offset
 ----------
 
