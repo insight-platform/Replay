@@ -5,6 +5,7 @@ use crate::store::JobOffset;
 use anyhow::Result;
 use savant_core::primitives::Attribute;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -13,26 +14,30 @@ pub struct JobQuery {
     pub configuration: JobConfiguration,
     pub stop_condition: JobStopCondition,
     pub anchor_keyframe: String,
+    pub anchor_wait_duration: Option<Duration>,
     pub offset: JobOffset,
     pub attributes: Vec<Attribute>,
 }
 
 impl JobQuery {
     pub fn new(
-        socket: SinkConfiguration,
+        sink: SinkConfiguration,
         configuration: JobConfiguration,
         stop_condition: JobStopCondition,
         anchor_keyframe: Uuid,
+        anchor_wait_duration: Option<Duration>,
         offset: JobOffset,
         attributes: Vec<Attribute>,
     ) -> Self {
+        let anchor_keyframe = anchor_keyframe.to_string();
         Self {
-            sink: socket,
+            sink,
             configuration,
             stop_condition,
             offset,
             attributes,
-            anchor_keyframe: anchor_keyframe.to_string(),
+            anchor_keyframe,
+            anchor_wait_duration,
         }
     }
 
@@ -82,6 +87,7 @@ mod tests {
             configuration,
             stop_condition,
             incremental_uuid_v7(),
+            Some(Duration::from_secs(1)),
             offset,
             vec![Attribute::persistent(
                 "key",

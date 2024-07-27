@@ -10,6 +10,7 @@ use std::num::NonZeroU64;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
+use tokio::time::Instant;
 
 pub struct RocksDbJobFactory(JobFactory<RocksDbStore>);
 
@@ -58,17 +59,26 @@ where
         let writer = self.writer_cache.get(&query.sink)?;
         let job_id = incremental_uuid_v7().as_u128();
         let anchor_uuid = uuid::Uuid::parse_str(&query.anchor_keyframe)?;
-
-        let pos = self
-            .store
-            .lock()
-            .await
-            .get_first(
-                &query.configuration.stored_stream_id,
-                anchor_uuid,
-                query.offset.clone(),
-            )
-            .await?;
+        let anchor_wait_max = query
+            .anchor_wait_duration
+            .unwrap_or(Duration::from_millis(1));
+        let now = Instant::now();
+        let mut pos = None;
+        while now.elapsed() < anchor_wait_max {
+            pos = self
+                .store
+                .lock()
+                .await
+                .get_first(
+                    &query.configuration.stored_stream_id,
+                    anchor_uuid,
+                    query.offset.clone(),
+                )
+                .await?;
+            if pos.is_some() {
+                break;
+            }
+        }
 
         if pos.is_none() {
             return Err(anyhow::anyhow!(
@@ -104,8 +114,6 @@ mod tests {
     use crate::store::rocksdb::RocksDbStore;
     use crate::store::{gen_properly_filled_frame, JobOffset, Store};
     use anyhow::Result;
-    use savant_core::primitives::attribute_value::AttributeValue;
-    use savant_core::primitives::Attribute;
     use std::sync::Arc;
     use std::time::Duration;
     use tokio::sync::Mutex;
@@ -149,17 +157,62 @@ mod tests {
             configuration,
             stop_condition,
             f.get_uuid(),
+            None,
             offset,
-            vec![Attribute::persistent(
-                "key",
-                "value",
-                vec![
-                    AttributeValue::integer(1, Some(0.5)),
-                    AttributeValue::float_vector(vec![1.0, 2.0, 3.0], None),
-                ],
-                &None,
-                false,
-            )],
+            vec![],
+        );
+        let _job = factory.create_job(job_query).await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_create_rocksdb_delayed_job() -> Result<()> {
+        let dir = tempfile::TempDir::new()?;
+        let path = dir.path();
+        let store = Arc::new(Mutex::new(RocksDbStore::new(
+            path,
+            Duration::from_secs(60),
+        )?));
+
+        let mut factory =
+            RocksDbJobFactory::new(store.clone(), 1024u64.try_into()?, Duration::from_secs(30))?;
+        let f = gen_properly_filled_frame();
+        let source_id = f.get_source_id();
+        store
+            .lock()
+            .await
+            .add_message(&f.to_message(), &[], &[])
+            .await?;
+        let f = gen_properly_filled_frame();
+
+        let f_clone = f.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            store
+                .lock()
+                .await
+                .add_message(&f_clone.to_message(), &[], &[])
+                .await
+                .unwrap();
+        });
+
+        let configuration = JobConfigurationBuilder::default()
+            .min_duration(Duration::from_millis(7))
+            .max_duration(Duration::from_millis(10))
+            .stored_stream_id(source_id)
+            .resulting_stream_id("resulting_source_id".to_string())
+            .build()
+            .unwrap();
+        let stop_condition = JobStopCondition::frame_count(1);
+        let offset = JobOffset::Blocks(1);
+        let job_query = JobQuery::new(
+            SinkConfiguration::test_dealer_connect_sink(),
+            configuration,
+            stop_condition,
+            f.get_uuid(),
+            Some(Duration::from_secs(1)),
+            offset,
+            vec![],
         );
         let _job = factory.create_job(job_query).await?;
         Ok(())
