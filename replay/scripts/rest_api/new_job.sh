@@ -57,6 +57,10 @@ cat <<EOF
   },
   "stop_condition": "never",
   "anchor_keyframe": "$ANCHOR_KEYFRAME",
+  "anchor_wait_duration": {
+    "secs": 1,
+    "nanos": 0
+  },
   "offset": {
     "blocks": 5
   },

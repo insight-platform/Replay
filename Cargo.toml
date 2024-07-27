@@ -19,7 +19,7 @@ tokio-timerfd = "0.2"
 uuid = { version = "1", features = ["v7"] }
 
 [workspace.package]
-version = "0.8.2"
+version = "0.9.0"
 edition = "2021"
 authors = ["Ivan Kudriavtsev <ivan.a.kudryavtsev@gmail.com>"]
 description = "ReplayDB Service"
