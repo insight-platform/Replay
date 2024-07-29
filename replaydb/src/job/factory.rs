@@ -10,7 +10,6 @@ use std::num::NonZeroU64;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
-use tokio::time::Instant;
 
 pub struct RocksDbJobFactory(JobFactory<RocksDbStore>);
 
@@ -57,35 +56,11 @@ where
     }
     pub async fn create_job(&mut self, query: JobQuery) -> Result<Job<S>> {
         let writer = self.writer_cache.get(&query.sink)?;
-        let job_id = incremental_uuid_v7().as_u128();
+        let job_id = incremental_uuid_v7();
         let anchor_uuid = uuid::Uuid::parse_str(&query.anchor_keyframe)?;
-        let anchor_wait_max = query
+        let anchor_wait_duration = query
             .anchor_wait_duration
             .unwrap_or(Duration::from_millis(1));
-        let now = Instant::now();
-        let mut pos = None;
-        while now.elapsed() < anchor_wait_max {
-            pos = self
-                .store
-                .lock()
-                .await
-                .get_first(
-                    &query.configuration.stored_stream_id,
-                    anchor_uuid,
-                    query.offset.clone(),
-                )
-                .await?;
-            if pos.is_some() {
-                break;
-            }
-        }
-
-        if pos.is_none() {
-            return Err(anyhow::anyhow!(
-                "No frame position found for: {}",
-                query.json()?
-            ));
-        }
 
         let mut update = VideoFrameUpdate::default();
         for attribute in query.attributes.iter() {
@@ -96,7 +71,9 @@ where
             self.store.clone(),
             writer,
             job_id,
-            pos.unwrap(),
+            anchor_uuid,
+            anchor_wait_duration,
+            query.offset,
             query.stop_condition,
             query.configuration,
             Some(update),

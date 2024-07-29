@@ -55,7 +55,7 @@ pub(crate) trait Store {
         &mut self,
         source_id: &str,
         keyframe_uuid: Uuid,
-        before: JobOffset,
+        before: &JobOffset,
     ) -> Result<Option<usize>>;
 
     async fn find_keyframes(
@@ -108,7 +108,7 @@ mod tests {
             &mut self,
             _: &str,
             keyframe_uuid: Uuid,
-            before: JobOffset,
+            before: &JobOffset,
         ) -> Result<Option<usize>> {
             let idx = self.keyframes.iter().position(|(u, _)| u == &keyframe_uuid);
             if idx.is_none() {
@@ -118,7 +118,7 @@ mod tests {
 
             Ok(Some(match before {
                 JobOffset::Blocks(blocks_before) => {
-                    if idx < blocks_before {
+                    if idx < *blocks_before {
                         self.keyframes[0].1
                     } else {
                         self.keyframes[idx - blocks_before].1
@@ -230,7 +230,7 @@ mod tests {
         f.set_pts(6);
         store.add_message(&f.to_message(), &[], &[]).await?;
 
-        let first = store.get_first("", u, JobOffset::Blocks(1)).await?;
+        let first = store.get_first("", u, &JobOffset::Blocks(1)).await?;
         assert_eq!(first, Some(4));
         let (m, _, _) = store.get_message("", first.unwrap()).await?.unwrap();
         assert!(matches!(
@@ -238,7 +238,7 @@ mod tests {
             Some(true)
         ));
 
-        let first_ts = store.get_first("", u, JobOffset::Seconds(5.0)).await?;
+        let first_ts = store.get_first("", u, &JobOffset::Seconds(5.0)).await?;
         assert_eq!(first_ts, Some(0));
         let (m, _, _) = store.get_message("", first_ts.unwrap()).await?.unwrap();
 

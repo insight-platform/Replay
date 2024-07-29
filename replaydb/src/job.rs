@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Result};
-use log::debug;
+use log::{debug, info, warn};
 use savant_core::message::Message;
 use savant_core::primitives::frame_update::VideoFrameUpdate;
 use savant_core::transport::zeromq::WriterResult;
@@ -17,7 +17,7 @@ use stop_condition::JobStopCondition;
 
 use crate::job_writer::JobWriter;
 use crate::store::rocksdb::RocksDbStore;
-use crate::store::Store;
+use crate::store::{JobOffset, Store};
 use crate::{best_ts, ParkingLotMutex};
 
 pub mod configuration;
@@ -46,11 +46,14 @@ pub enum SendEither<'a> {
 pub struct RocksDbJob(Job<RocksDbStore>);
 
 impl RocksDbJob {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         store: Arc<Mutex<RocksDbStore>>,
         writer: Arc<Mutex<JobWriter>>,
-        id: u128,
-        position: usize,
+        id: Uuid,
+        anchor_uuid: Uuid,
+        anchor_wait_duration: Duration,
+        offset: JobOffset,
         stop_condition: JobStopCondition,
         configuration: JobConfiguration,
         update: Option<VideoFrameUpdate>,
@@ -59,7 +62,9 @@ impl RocksDbJob {
             store,
             writer,
             id,
-            position,
+            anchor_uuid,
+            anchor_wait_duration,
+            offset,
             stop_condition,
             configuration,
             update,
@@ -89,11 +94,12 @@ pub(crate) struct Job<S: Store> {
     store: Arc<Mutex<S>>,
     #[serde(skip)]
     writer: Arc<Mutex<JobWriter>>,
-    #[serde(skip)]
-    uuid_id: Uuid,
+    anchor_uuid: u128,
+    anchor_wait_duration: Duration,
+    offset: JobOffset,
+    position: usize,
     id: u128,
     stop_condition: Arc<SyncJobStopCondition>,
-    position: usize,
     configuration: JobConfiguration,
     last_ts: Option<i64>,
     update: Option<VideoFrameUpdate>,
@@ -122,9 +128,10 @@ where
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         f.debug_struct("Job")
-            .field("id", &self.uuid_id.to_string())
+            .field("id", &self.id.to_string())
             .field("stop_condition", &self.stop_condition.0.lock())
-            .field("position", &self.position)
+            .field("anchor_uuid", &self.anchor_uuid.to_string())
+            .field("anchor_wait_duration", &self.anchor_wait_duration)
             .field("configuration", &self.configuration)
             .field("update", &self.update)
             .finish()
@@ -143,11 +150,14 @@ where
         serde_json::to_string(self).map_err(Into::into)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         store: Arc<Mutex<S>>,
         writer: Arc<Mutex<JobWriter>>,
-        id: u128,
-        position: usize,
+        id: Uuid,
+        anchor_uuid: Uuid,
+        anchor_wait_duration: Duration,
+        offset: JobOffset,
         stop_condition: JobStopCondition,
         configuration: JobConfiguration,
         update: Option<VideoFrameUpdate>,
@@ -160,17 +170,18 @@ where
             bail!("Stored source id or resulting source id is empty!");
         }
 
-        let uuid_id = Uuid::from_u128(id);
         Ok(Self {
             store,
             writer,
-            uuid_id,
-            id,
-            position,
+            id: id.as_u128(),
+            anchor_uuid: anchor_uuid.as_u128(),
+            anchor_wait_duration,
+            offset,
             stop_condition: Arc::new(SyncJobStopCondition::new(stop_condition)),
             configuration,
             last_ts: None,
             update,
+            position: 0,
         })
     }
 
@@ -187,9 +198,9 @@ where
                 let log_message = format!(
                     "No message received during the configured {} idle time (ms). Job Id: {} will be finished!",
                     self.configuration.max_idle_duration.as_millis(),
-                    self.uuid_id
+                    Uuid::from_u128(self.id)
                 );
-                log::warn!(target: "replay::db::job::read_message", "{}", &log_message);
+                warn!(target: "replay::db::job::read_message", "{}", &log_message);
                 bail!("{}", log_message);
             }
             match message {
@@ -264,11 +275,13 @@ where
         if ts < last_ts {
             let message = format!(
                 "Frame TS discrepancy detected in job {}: {} < {}!",
-                self.uuid_id, ts, last_ts
+                Uuid::from_u128(self.id),
+                ts,
+                last_ts
             );
-            log::warn!(target: "replay::db::job::check_ts_decrease", "{}", &message);
+            warn!(target: "replay::db::job::check_ts_decrease", "{}", &message);
             if self.configuration.stop_on_incorrect_ts {
-                log::warn!("Job will be finished due to a discrepant TS!");
+                warn!("Job will be finished due to a discrepant TS!");
                 bail!("{}", message);
             }
             Ok(true)
@@ -300,9 +313,9 @@ where
                 if now.elapsed() > self.configuration.max_delivery_duration {
                     let message = format!(
                         "Message delivery timeout occurred in job {}. Job will be finished!",
-                        self.uuid_id
+                        Uuid::from_u128(self.id)
                     );
-                    log::warn!(target: "replay::db::job::send_either", "{}", &message);
+                    warn!(target: "replay::db::job::send_either", "{}", &message);
                     bail!("{}", message);
                 }
 
@@ -314,18 +327,19 @@ where
                 let res = res.unwrap()?;
                 match res {
                     WriterResult::SendTimeout => {
-                        log::warn!(
+                        warn!(
                             "Send timeout occurred in job {}, retrying ...",
-                            self.uuid_id
+                            Uuid::from_u128(self.id)
                         );
                         break;
                     }
                     WriterResult::AckTimeout(t) => {
                         let message = format!(
                             "Ack timeout ({}) occurred in job {}, retrying ...",
-                            t, self.uuid_id
+                            t,
+                            Uuid::from_u128(self.id)
                         );
-                        log::warn!(target: "replay::db::job::send_either", "{}", &message);
+                        warn!(target: "replay::db::job::send_either", "{}", &message);
                         break;
                     }
                     WriterResult::Ack { .. } => {
@@ -340,6 +354,41 @@ where
     }
 
     pub async fn run_until_complete(&mut self) -> Result<()> {
+        let now = tokio::time::Instant::now();
+        let mut pos = None;
+        while now.elapsed() < self.anchor_wait_duration {
+            debug!(
+                "Waiting for frame with UUID={}, frame wait duration={:?}, and offset={:?}",
+                self.anchor_uuid, self.anchor_wait_duration, self.offset
+            );
+            pos = self
+                .store
+                .lock()
+                .await
+                .get_first(
+                    &self.configuration.stored_stream_id,
+                    Uuid::from_u128(self.anchor_uuid),
+                    &self.offset,
+                )
+                .await?;
+            if pos.is_some() {
+                info!(
+                    "Frame with UUID={} found for job with UUID={}, frame wait duration={:?}, and offset={:?}",
+                    self.anchor_uuid, self.anchor_uuid, self.anchor_wait_duration, self.offset
+                );
+                break;
+            }
+            tokio_timerfd::sleep(Duration::from_millis(1)).await?;
+        }
+
+        if pos.is_none() {
+            return Err(anyhow::anyhow!(
+                "No frame position found for frame with UUID={}, frame wait duration={:?}, and offset={:?}",
+                self.anchor_uuid, self.anchor_wait_duration, self.offset
+            ));
+        }
+        self.position = pos.unwrap();
+
         if self.configuration.ts_sync {
             self.run_ts_synchronized_until_complete().await?;
         } else {
@@ -368,9 +417,9 @@ where
 
             self.position += 1;
             if self.stop_condition.0.lock().check(&m)? {
-                log::info!(
+                info!(
                     "Job Id: {} has been finished by stop condition!",
-                    self.uuid_id
+                    Uuid::from_u128(self.id)
                 );
                 break;
             }
@@ -384,9 +433,9 @@ where
         if !prev_message.is_video_frame() {
             let message = format!(
                 "First message in job {} is not a video frame, job will be finished!",
-                self.uuid_id
+                Uuid::from_u128(self.id)
             );
-            log::warn!(target: "replay::db::job", "{}", &message);
+            warn!(target: "replay::db::job", "{}", &message);
             bail!("{}", message);
         }
 
@@ -437,16 +486,16 @@ where
                 let delay = if delay > self.configuration.max_duration {
                     let message = format!(
                         "PTS discrepancy delay is greater than the configured max delay in job {}. The job will use configured delay for the next frame!",
-                        self.uuid_id
+                        Uuid::from_u128(self.id)
                     );
-                    log::debug!(target: "replay::db::job", "{}", &message);
+                    debug!(target: "replay::db::job", "{}", &message);
                     self.configuration.max_duration
                 } else if delay < self.configuration.min_duration {
                     let message = format!(
                         "PTS discrepancy delay is less than the configured min delay in job {}. The job will use configured delay for the next frame!",
-                        self.uuid_id
+                        Uuid::from_u128(self.id)
                     );
-                    log::debug!(target: "replay::db::job", "{}", &message);
+                    debug!(target: "replay::db::job", "{}", &message);
                     self.configuration.min_duration
                 } else {
                     delay
@@ -459,15 +508,14 @@ where
                     .checked_sub(last_skew)
                     .unwrap_or_else(|| Duration::from_secs(0));
 
-                //dbg!(corrected_delay);
-                log::debug!(target: "replay::db::job", "Corrected delay: {:?}", corrected_delay);
+                debug!(target: "replay::db::job", "Corrected delay: {:?}", corrected_delay);
                 let skew = Instant::now();
                 tokio_timerfd::sleep(corrected_delay).await?;
                 last_skew = skew
                     .elapsed()
                     .checked_sub(corrected_delay)
                     .unwrap_or_else(|| Duration::from_secs(0));
-                log::debug!(target: "replay::db::job", "Last timer skew: {:?}", last_skew);
+                debug!(target: "replay::db::job", "Last timer skew: {:?}", last_skew);
                 last_video_frame_sent = Instant::now();
             }
 
@@ -481,9 +529,9 @@ where
             self.position += 1;
 
             if self.stop_condition.0.lock().check(&message)? {
-                log::info!(
+                info!(
                     "Job Id: {} has been finished by stop condition!",
-                    self.uuid_id
+                    Uuid::from_u128(self.id)
                 );
                 break;
             }
@@ -549,7 +597,7 @@ mod tests {
             &mut self,
             _source_id: &str,
             _keyframe_uuid: Uuid,
-            _before: JobOffset,
+            _before: &JobOffset,
         ) -> Result<Option<usize>> {
             unreachable!("MockStore::get_first")
         }
@@ -615,10 +663,12 @@ mod tests {
     async fn test_read_message() -> Result<()> {
         let (r, w) = get_channel().await?;
 
+        let f0 = gen_properly_filled_frame();
+        let f0_uuid = f0.get_uuid();
         let store = MockStore {
             messages: vec![
                 (
-                    Some((gen_properly_filled_frame().to_message(), vec![], vec![])),
+                    Some((f0.to_message(), vec![], vec![])),
                     Duration::from_millis(10),
                 ),
                 (
@@ -636,11 +686,14 @@ mod tests {
             .resulting_stream_id("resulting_id".to_string())
             .max_idle_duration(Duration::from_millis(50))
             .build_and_validate()?;
+
         let job = Job::new(
             store,
             w.clone(),
-            0,
-            0,
+            Uuid::from_u128(0),
+            f0_uuid,
+            Duration::from_millis(50),
+            JobOffset::Blocks(0),
             JobStopCondition::last_frame(incremental_uuid_v7().as_u128()),
             job_conf,
             None,
@@ -660,12 +713,14 @@ mod tests {
     async fn test_read_no_data() -> Result<()> {
         let (r, w) = get_channel().await?;
 
+        let f0 = gen_properly_filled_frame();
+        let f0_uuid = f0.get_uuid();
         let store = MockStore {
             messages: vec![
                 (None, Duration::from_millis(10)),
                 (None, Duration::from_millis(10)),
                 (
-                    Some((gen_properly_filled_frame().to_message(), vec![], vec![])),
+                    Some((f0.to_message(), vec![], vec![])),
                     Duration::from_millis(10),
                 ),
                 (None, Duration::from_millis(1)),
@@ -683,8 +738,10 @@ mod tests {
         let job = Job::new(
             store,
             w.clone(),
-            0,
-            0,
+            Uuid::from_u128(0),
+            f0_uuid,
+            Duration::from_millis(50),
+            JobOffset::Seconds(1.0),
             JobStopCondition::last_frame(incremental_uuid_v7().as_u128()),
             job_conf,
             None,
@@ -720,8 +777,10 @@ mod tests {
         let job = Job::new(
             store.clone(),
             w.clone(),
-            0,
-            0,
+            Uuid::from_u128(0),
+            incremental_uuid_v7(),
+            Duration::from_millis(50),
+            JobOffset::Seconds(1.0),
             JobStopCondition::last_frame(incremental_uuid_v7().as_u128()),
             job_conf,
             None,
@@ -771,8 +830,10 @@ mod tests {
         let job = Job::new(
             store.clone(),
             w.clone(),
-            0,
-            0,
+            Uuid::from_u128(0),
+            incremental_uuid_v7(),
+            Duration::from_millis(50),
+            JobOffset::Seconds(1.0),
             JobStopCondition::last_frame(incremental_uuid_v7().as_u128()),
             job_conf,
             None,
@@ -810,8 +871,10 @@ mod tests {
         let mut job = Job::new(
             store.clone(),
             w.clone(),
-            0,
-            0,
+            Uuid::from_u128(0),
+            incremental_uuid_v7(),
+            Duration::from_millis(50),
+            JobOffset::Seconds(1.0),
             JobStopCondition::last_frame(incremental_uuid_v7().as_u128()),
             job_conf,
             None,
@@ -860,8 +923,10 @@ mod tests {
         let mut job = Job::new(
             store.clone(),
             w.clone(),
-            0,
-            0,
+            Uuid::from_u128(0),
+            incremental_uuid_v7(),
+            Duration::from_millis(50),
+            JobOffset::Seconds(1.0),
             JobStopCondition::last_frame(incremental_uuid_v7().as_u128()),
             job_conf,
             None,
@@ -899,8 +964,10 @@ mod tests {
         let job = Job::new(
             store.clone(),
             w.clone(),
-            0,
-            0,
+            Uuid::from_u128(0),
+            incremental_uuid_v7(),
+            Duration::from_millis(50),
+            JobOffset::Seconds(1.0),
             JobStopCondition::last_frame(incremental_uuid_v7().as_u128()),
             job_conf,
             None,
@@ -942,8 +1009,10 @@ mod tests {
         let job = Job::new(
             store.clone(),
             w.clone(),
-            0,
-            0,
+            Uuid::from_u128(0),
+            incremental_uuid_v7(),
+            Duration::from_millis(50),
+            JobOffset::Seconds(1.0),
             JobStopCondition::last_frame(incremental_uuid_v7().as_u128()),
             job_conf,
             None,
@@ -992,8 +1061,10 @@ mod tests {
         let mut job = Job::new(
             store,
             w.clone(),
-            0,
-            0,
+            Uuid::from_u128(0),
+            frames.first().as_ref().unwrap().get_uuid(),
+            Duration::from_millis(50),
+            JobOffset::Seconds(1.0),
             JobStopCondition::last_frame(frames.last().as_ref().unwrap().get_uuid_u128()),
             job_conf,
             None,
@@ -1019,7 +1090,7 @@ mod tests {
         Ok(())
     }
 
-    async fn basic_sync_delivery(id: u128) -> Result<(NonBlockingReader, Mutex<JobWriter>)> {
+    async fn basic_sync_delivery(id: Uuid) -> Result<(NonBlockingReader, Mutex<JobWriter>)> {
         let (r, w) = get_channel().await?;
         let mut frames = vec![];
         let n = 20;
@@ -1053,7 +1124,9 @@ mod tests {
             store,
             w.clone(),
             id,
-            0,
+            frames.first().as_ref().unwrap().get_uuid(),
+            Duration::from_millis(50),
+            JobOffset::Seconds(1.0),
             JobStopCondition::last_frame(frames.last().as_ref().unwrap().get_uuid_u128()),
             job_conf,
             None,
@@ -1085,7 +1158,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_run_sync_basic_until_complete() -> Result<()> {
-        let (r, w) = basic_sync_delivery(0).await?;
+        let (r, w) = basic_sync_delivery(Uuid::default()).await?;
         shutdown_channel(r, w).await?;
         Ok(())
     }
@@ -1095,10 +1168,15 @@ mod tests {
         let (r, w) = get_channel().await?;
 
         let last_uuid: u128;
+        let first_uuid: Uuid;
         let store = MockStore {
             messages: vec![
                 (
-                    Some((gen_properly_filled_frame().to_message(), vec![], vec![])),
+                    {
+                        let f = gen_properly_filled_frame();
+                        first_uuid = f.get_uuid();
+                        Some((f.to_message(), vec![], vec![]))
+                    },
                     Duration::from_millis(0),
                 ),
                 (
@@ -1159,8 +1237,10 @@ mod tests {
         let mut job = Job::new(
             store,
             w.clone(),
-            0,
-            0,
+            Uuid::default(),
+            first_uuid,
+            Duration::from_millis(50),
+            JobOffset::Seconds(1.0),
             JobStopCondition::last_frame(last_uuid),
             job_conf,
             None,
@@ -1218,8 +1298,10 @@ mod tests {
         let mut job = Job::new(
             store,
             w.clone(),
-            0,
-            0,
+            Uuid::default(),
+            frames.first().as_ref().unwrap().get_uuid(),
+            Duration::from_millis(50),
+            JobOffset::Seconds(1.0),
             JobStopCondition::last_frame(frames.last().as_ref().unwrap().get_uuid_u128()),
             job_conf,
             None,
@@ -1290,8 +1372,10 @@ mod tests {
         let mut job = Job::new(
             store,
             w.clone(),
-            0,
-            0,
+            Uuid::default(),
+            frames.first().as_ref().unwrap().get_uuid(),
+            Duration::from_millis(50),
+            JobOffset::Seconds(1.0),
             JobStopCondition::last_frame(frames.last().as_ref().unwrap().get_uuid_u128()),
             job_conf,
             None,
@@ -1326,8 +1410,8 @@ mod tests {
 
     #[tokio::test]
     async fn concurrent_jobs() -> Result<()> {
-        let t = tokio::spawn(basic_sync_delivery(0));
-        let t2 = tokio::spawn(basic_sync_delivery(1));
+        let t = tokio::spawn(basic_sync_delivery(Uuid::from_u128(0)));
+        let t2 = tokio::spawn(basic_sync_delivery(Uuid::from_u128(1)));
         sleep(Duration::from_secs(1)).await?;
         let (r1, w1) = t.await??;
         let (r2, w2) = t2.await??;
@@ -1373,8 +1457,10 @@ mod tests {
         let mut job = Job::new(
             store,
             w.clone(),
-            0,
-            0,
+            Uuid::default(),
+            frames.first().as_ref().unwrap().get_uuid(),
+            Duration::from_millis(50),
+            JobOffset::Seconds(1.0),
             JobStopCondition::last_frame(frames.last().as_ref().unwrap().get_uuid_u128()),
             job_conf,
             Some(u),
@@ -1424,8 +1510,10 @@ mod tests {
         let job = Job::new(
             store.clone(),
             w.clone(),
-            incremental_uuid_v7().as_u128(),
-            0,
+            Uuid::from_u128(0),
+            incremental_uuid_v7(),
+            Duration::from_millis(50),
+            JobOffset::Seconds(1.0),
             JobStopCondition::last_frame(incremental_uuid_v7().as_u128()),
             job_conf,
             Some(u),

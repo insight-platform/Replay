@@ -278,7 +278,7 @@ impl super::Store for RocksDbStore {
         &mut self,
         source_id: &str,
         keyframe_uuid: Uuid,
-        before: JobOffset,
+        before: &JobOffset,
     ) -> Result<Option<usize>> {
         let source_hash = self.get_source_hash(source_id)?;
         let key = KeyframeKey {
@@ -324,13 +324,13 @@ impl super::Store for RocksDbStore {
 
                 match before {
                     JobOffset::Blocks(blocks_before) => {
-                        if req_index - current_index >= blocks_before {
+                        if req_index - current_index >= *blocks_before {
                             break;
                         }
                     }
                     JobOffset::Seconds(seconds_before) => {
                         if req_pts - current_pts
-                            >= Duration::from_secs_f64(seconds_before).as_nanos()
+                            >= Duration::from_secs_f64(*seconds_before).as_nanos()
                         {
                             break;
                         }
@@ -477,7 +477,7 @@ mod tests {
         db.add_message(&f.to_message(), &[], &[]).await?;
 
         let first = db
-            .get_first(&source_id, uuid_f3, JobOffset::Blocks(1))
+            .get_first(&source_id, uuid_f3, &JobOffset::Blocks(1))
             .await?
             .unwrap();
         assert_eq!(first, 1);
@@ -502,13 +502,13 @@ mod tests {
         db.add_message(&f.to_message(), &[], &[]).await?;
 
         let first = db
-            .get_first(&source_id, uuid_f3, JobOffset::Seconds(0.005))
+            .get_first(&source_id, uuid_f3, &JobOffset::Seconds(0.005))
             .await?
             .unwrap();
         assert_eq!(first, 1);
 
         let first = db
-            .get_first(&source_id, uuid_f3, JobOffset::Seconds(0.015))
+            .get_first(&source_id, uuid_f3, &JobOffset::Seconds(0.015))
             .await?
             .unwrap();
         assert_eq!(first, 0);
