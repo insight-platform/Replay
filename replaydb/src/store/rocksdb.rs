@@ -315,22 +315,22 @@ impl super::Store for RocksDbStore {
             );
 
             let mut current_index = req_index;
+            let mut block_counter = 0;
             for res in iter {
                 let (_, v) = res?;
                 let value: KeyframeValue = bincode::decode_from_slice(&v, self.configuration)?.0;
-
                 current_index = value.index;
                 let current_pts = value.ts;
-
                 match before {
                     JobOffset::Blocks(blocks_before) => {
-                        if req_index - current_index >= *blocks_before {
+                        if block_counter >= *blocks_before {
                             break;
                         }
+                        block_counter += 1;
                     }
                     JobOffset::Seconds(seconds_before) => {
                         if req_pts - current_pts
-                            >= Duration::from_secs_f64(*seconds_before).as_nanos()
+                            > Duration::from_secs_f64(*seconds_before).as_nanos()
                         {
                             break;
                         }
@@ -459,28 +459,67 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_find_first_block_in_blocks() -> Result<()> {
+    async fn test_find_starting_block_with_offset_in_blocks() -> Result<()> {
+        const DELTA_FRAMES: usize = 10;
         let dir = tempfile::TempDir::new()?;
         let path = dir.path();
         let mut db = RocksDbStore::new(path, Duration::from_secs(60))?;
-        let f = gen_properly_filled_frame();
+
+        // add to stream 1 (0)
+        let f = gen_properly_filled_frame(true);
         let source_id = f.get_source_id();
-        db.add_message(&f.to_message(), &[], &[]).await?;
-        let f = gen_properly_filled_frame();
-        db.add_message(&f.to_message(), &[], &[]).await?;
-        let mut other_source_frame = gen_properly_filled_frame();
-        other_source_frame.set_source_id("other_source_id");
+        let first_indx = db.add_message(&f.to_message(), &[], &[]).await?;
+        for _ in 0..DELTA_FRAMES {
+            let f = gen_properly_filled_frame(false);
+            db.add_message(&f.to_message(), &[], &[]).await?;
+        }
+
+        // add to stream 1 (11)
+        let f = gen_properly_filled_frame(true);
+        let second_indx = db.add_message(&f.to_message(), &[], &[]).await?;
+        for _ in 0..DELTA_FRAMES {
+            let f = gen_properly_filled_frame(false);
+            db.add_message(&f.to_message(), &[], &[]).await?;
+        }
+
+        // add to stream 2 (22)
+        let mut other_source_frame = gen_properly_filled_frame(true);
+        let other_source_id = "other_source_id";
+        other_source_frame.set_source_id(other_source_id);
         db.add_message(&other_source_frame.to_message(), &[], &[])
             .await?;
-        let f = gen_properly_filled_frame();
+        for _ in 0..DELTA_FRAMES {
+            let mut f = gen_properly_filled_frame(false);
+            f.set_source_id(other_source_id);
+            db.add_message(&f.to_message(), &[], &[]).await?;
+        }
+
+        // add to stream 1 (33)
+        let f = gen_properly_filled_frame(true);
         let uuid_f3 = f.get_uuid();
-        db.add_message(&f.to_message(), &[], &[]).await?;
+        let last_indx = db.add_message(&f.to_message(), &[], &[]).await?;
+        for _ in 0..DELTA_FRAMES {
+            let f = gen_properly_filled_frame(false);
+            db.add_message(&f.to_message(), &[], &[]).await?;
+        }
+
+        let first = db
+            .get_first(&source_id, uuid_f3, &JobOffset::Blocks(0))
+            .await?
+            .unwrap();
+        assert_eq!(first, last_indx);
 
         let first = db
             .get_first(&source_id, uuid_f3, &JobOffset::Blocks(1))
             .await?
             .unwrap();
-        assert_eq!(first, 1);
+        assert_eq!(first, second_indx);
+
+        let first = db
+            .get_first(&source_id, uuid_f3, &JobOffset::Blocks(2))
+            .await?
+            .unwrap();
+        assert_eq!(first, first_indx);
 
         Ok(())
     }
@@ -490,14 +529,14 @@ mod tests {
         let dir = tempfile::TempDir::new()?;
         let path = dir.path();
         let mut db = RocksDbStore::new(path, Duration::from_secs(60))?;
-        let f = gen_properly_filled_frame();
+        let f = gen_properly_filled_frame(true);
         let source_id = f.get_source_id();
         db.add_message(&f.to_message(), &[], &[]).await?;
         sleep(Duration::from_millis(10)).await?;
-        let f = gen_properly_filled_frame();
+        let f = gen_properly_filled_frame(true);
         db.add_message(&f.to_message(), &[], &[]).await?;
         sleep(Duration::from_millis(10)).await?;
-        let f = gen_properly_filled_frame();
+        let f = gen_properly_filled_frame(true);
         let uuid_f3 = f.get_uuid();
         db.add_message(&f.to_message(), &[], &[]).await?;
 
@@ -523,9 +562,9 @@ mod tests {
         let mut db = RocksDbStore::new(path, Duration::from_secs(60))?;
         let mut keyframes = vec![];
         const N: usize = 20;
-        let source = gen_properly_filled_frame().get_source_id();
+        let source = gen_properly_filled_frame(true).get_source_id();
         for i in 0..N {
-            let f = gen_properly_filled_frame();
+            let f = gen_properly_filled_frame(true);
             db.add_message(&f.to_message(), &[], &[]).await?;
             keyframes.push(f.get_uuid());
             if i + 1 == N.div(2) {
