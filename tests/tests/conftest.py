@@ -7,7 +7,7 @@ from savant.client import SinkBuilder, JaegerLogProvider
 
 import replay.rest_api as rest_api
 
-replay_image = "ghcr.io/insight-platform/replay-x86:v0.7.1"
+replay_image = "ghcr.io/insight-platform/replay-x86:main"
 savant_adapters_gstreamer_image = "ghcr.io/insight-platform/savant-adapters-gstreamer:latest"
 
 
