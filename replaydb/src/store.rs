@@ -10,7 +10,7 @@ use std::time::SystemTime;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-pub fn gen_properly_filled_frame() -> VideoFrameProxy {
+pub fn gen_properly_filled_frame(kf: bool) -> VideoFrameProxy {
     let mut f = gen_frame();
     let (tbn, tbd) = (1, 1_000_000);
     let now_nanos = SystemTime::now()
@@ -22,7 +22,7 @@ pub fn gen_properly_filled_frame() -> VideoFrameProxy {
     f.set_pts(pts);
     f.set_creation_timestamp_ns(now_nanos);
     f.set_time_base((tbn, tbd));
-    f.set_keyframe(Some(true));
+    f.set_keyframe(Some(kf));
     f
 }
 

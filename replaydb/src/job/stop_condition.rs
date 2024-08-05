@@ -142,19 +142,19 @@ mod tests {
 
     #[test]
     fn test_last_frame_stop_condition() -> Result<()> {
-        let frame_before = gen_properly_filled_frame();
+        let frame_before = gen_properly_filled_frame(true);
         thread::sleep(Duration::from_millis(1));
         let mut stop_condition = JobStopCondition::last_frame(incremental_uuid_v7().as_u128());
         assert!(!stop_condition.check(&frame_before.to_message())?);
         thread::sleep(Duration::from_millis(1));
-        let frame_after = gen_properly_filled_frame();
+        let frame_after = gen_properly_filled_frame(true);
         assert!(stop_condition.check(&frame_after.to_message())?);
         Ok(())
     }
 
     #[test]
     fn test_frame_count_stop_condition() -> Result<()> {
-        let frame = gen_properly_filled_frame();
+        let frame = gen_properly_filled_frame(true);
         let mut stop_condition = JobStopCondition::frame_count(2);
         assert!(!stop_condition.check(&frame.to_message())?);
         assert!(stop_condition.check(&frame.to_message())?);
@@ -163,20 +163,20 @@ mod tests {
 
     #[test]
     fn test_key_frame_count_stop_condition() -> Result<()> {
-        let mut frame = gen_properly_filled_frame();
+        let mut frame = gen_properly_filled_frame(true);
         frame.set_keyframe(Some(true));
         let mut stop_condition = JobStopCondition::key_frame_count(2);
         assert!(!stop_condition.check(&frame.to_message())?);
         frame.set_keyframe(Some(false));
         assert!(!stop_condition.check(&frame.to_message())?);
-        let key_frame = gen_properly_filled_frame();
+        let key_frame = gen_properly_filled_frame(true);
         assert!(stop_condition.check(&key_frame.to_message())?);
         Ok(())
     }
 
     #[test]
     fn test_pts_delta_stop_condition() -> Result<()> {
-        let mut frame = gen_properly_filled_frame();
+        let mut frame = gen_properly_filled_frame(true);
         frame.set_time_base((1, 1_000_000));
         frame.set_pts(1_000_000);
         let mut stop_condition = JobStopCondition::pts_delta_sec(1.0);
@@ -190,7 +190,7 @@ mod tests {
 
     #[test]
     fn test_real_time_delta_stop_condition() -> Result<()> {
-        let frame = gen_properly_filled_frame();
+        let frame = gen_properly_filled_frame(true);
         let mut stop_condition = JobStopCondition::real_time_delta_ms(500);
         assert!(!stop_condition.check(&frame.to_message())?);
         thread::sleep(Duration::from_millis(600));

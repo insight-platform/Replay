@@ -663,7 +663,7 @@ mod tests {
     async fn test_read_message() -> Result<()> {
         let (r, w) = get_channel().await?;
 
-        let f0 = gen_properly_filled_frame();
+        let f0 = gen_properly_filled_frame(true);
         let f0_uuid = f0.get_uuid();
         let store = MockStore {
             messages: vec![
@@ -672,7 +672,7 @@ mod tests {
                     Duration::from_millis(10),
                 ),
                 (
-                    Some((gen_properly_filled_frame().to_message(), vec![], vec![])),
+                    Some((gen_properly_filled_frame(true).to_message(), vec![], vec![])),
                     Duration::from_millis(100),
                 ),
                 (None, Duration::from_millis(1)),
@@ -713,7 +713,7 @@ mod tests {
     async fn test_read_no_data() -> Result<()> {
         let (r, w) = get_channel().await?;
 
-        let f0 = gen_properly_filled_frame();
+        let f0 = gen_properly_filled_frame(true);
         let f0_uuid = f0.get_uuid();
         let store = MockStore {
             messages: vec![
@@ -786,7 +786,7 @@ mod tests {
             None,
         )?;
 
-        let m = job.prepare_message(gen_properly_filled_frame().to_message())?;
+        let m = job.prepare_message(gen_properly_filled_frame(true).to_message())?;
         assert!(m.is_some());
         let m = m.unwrap();
         assert_eq!(
@@ -839,7 +839,7 @@ mod tests {
             None,
         )?;
 
-        let m = job.prepare_message(gen_properly_filled_frame().to_message())?;
+        let m = job.prepare_message(gen_properly_filled_frame(true).to_message())?;
         assert!(m.is_some());
         let m = m.unwrap().as_video_frame().unwrap();
         assert_eq!(m.get_source_id(), "resulting_id".to_string());
@@ -884,13 +884,13 @@ mod tests {
         let res = job.check_ts_decrease(&eos)?;
         assert_eq!(res, false);
 
-        let first = gen_properly_filled_frame().to_message();
+        let first = gen_properly_filled_frame(true).to_message();
 
         tokio_timerfd::sleep(Duration::from_millis(1)).await?;
-        let second = gen_properly_filled_frame().to_message();
+        let second = gen_properly_filled_frame(true).to_message();
 
         tokio_timerfd::sleep(Duration::from_millis(1)).await?;
-        let third = gen_properly_filled_frame().to_message();
+        let third = gen_properly_filled_frame(true).to_message();
 
         let res = job.check_ts_decrease(&first)?;
         assert_eq!(res, false);
@@ -932,10 +932,10 @@ mod tests {
             None,
         )?;
 
-        let first = gen_properly_filled_frame().to_message();
+        let first = gen_properly_filled_frame(true).to_message();
 
         tokio_timerfd::sleep(Duration::from_millis(1)).await?;
-        let second = gen_properly_filled_frame().to_message();
+        let second = gen_properly_filled_frame(true).to_message();
 
         let res = job.check_ts_decrease(&second)?;
         assert_eq!(res, false);
@@ -1033,9 +1033,9 @@ mod tests {
         let (r, w) = get_channel().await?;
 
         let frames = vec![
-            gen_properly_filled_frame(),
-            gen_properly_filled_frame(),
-            gen_properly_filled_frame(),
+            gen_properly_filled_frame(true),
+            gen_properly_filled_frame(true),
+            gen_properly_filled_frame(true),
         ];
 
         let store = MockStore {
@@ -1095,7 +1095,7 @@ mod tests {
         let mut frames = vec![];
         let n = 20;
         for _ in 0..n {
-            let f = gen_properly_filled_frame();
+            let f = gen_properly_filled_frame(true);
             frames.push(f);
             tokio_timerfd::sleep(Duration::from_millis(30)).await?;
         }
@@ -1173,7 +1173,7 @@ mod tests {
             messages: vec![
                 (
                     {
-                        let f = gen_properly_filled_frame();
+                        let f = gen_properly_filled_frame(true);
                         first_uuid = f.get_uuid();
                         Some((f.to_message(), vec![], vec![]))
                     },
@@ -1188,7 +1188,7 @@ mod tests {
                     Duration::from_millis(0),
                 ),
                 (
-                    Some((gen_properly_filled_frame().to_message(), vec![], vec![])),
+                    Some((gen_properly_filled_frame(true).to_message(), vec![], vec![])),
                     Duration::from_millis(0),
                 ),
                 (
@@ -1202,7 +1202,7 @@ mod tests {
                 (
                     Some((
                         {
-                            let f = gen_properly_filled_frame();
+                            let f = gen_properly_filled_frame(true);
                             last_uuid = f.get_uuid_u128();
                             f
                         }
@@ -1268,7 +1268,7 @@ mod tests {
 
         let n = 20;
         for _ in 0..n {
-            let f = gen_properly_filled_frame();
+            let f = gen_properly_filled_frame(true);
             frames.push(f);
             tokio_timerfd::sleep(Duration::from_millis(10)).await?;
         }
@@ -1341,7 +1341,7 @@ mod tests {
 
         let n = 20;
         for _ in 0..n {
-            let f = gen_properly_filled_frame();
+            let f = gen_properly_filled_frame(true);
             frames.push(f);
             tokio_timerfd::sleep(Duration::from_millis(30)).await?;
         }
@@ -1425,9 +1425,9 @@ mod tests {
         let (r, w) = get_channel().await?;
 
         let frames = vec![
-            gen_properly_filled_frame(),
-            gen_properly_filled_frame(),
-            gen_properly_filled_frame(),
+            gen_properly_filled_frame(true),
+            gen_properly_filled_frame(true),
+            gen_properly_filled_frame(true),
         ];
 
         let store = MockStore {
