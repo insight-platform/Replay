@@ -1,0 +1,6 @@
+pytest
+docker
+requests
+numpy
+https://github.com/insight-platform/savant-rs/releases/download/0.3.3/savant_rs-0.3.3-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+https://github.com/insight-platform/Savant/releases/download/v0.4.0/savant-0.4.0-py3-none-any.whl
