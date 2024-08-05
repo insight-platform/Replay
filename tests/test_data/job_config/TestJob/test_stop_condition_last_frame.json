@@ -1,0 +1,88 @@
+{
+    "sink": {
+        "url": "dealer+connect:tcp://127.0.0.1:6666",
+        "send_timeout": {
+            "secs": 1,
+            "nanos": 0
+        },
+        "send_retries": 3,
+        "receive_timeout": {
+            "secs": 1,
+            "nanos": 0
+        },
+        "receive_retries": 3,
+        "send_hwm": 1000,
+        "receive_hwm": 1000,
+        "inflight_ops": 100
+    },
+    "configuration": {
+        "ts_sync": true,
+        "skip_intermediary_eos": false,
+        "send_eos": true,
+        "stop_on_incorrect_ts": false,
+        "ts_discrepancy_fix_duration": {
+            "secs": 0,
+            "nanos": 33333333
+        },
+        "min_duration": {
+            "secs": 0,
+            "nanos": 10000000
+        },
+        "max_duration": {
+            "secs": 0,
+            "nanos": 103333333
+        },
+        "stored_stream_id": "$STREAM_ID",
+        "resulting_stream_id": "$RESULTING_STREAM_ID",
+        "routing_labels": "bypass",
+        "max_idle_duration": {
+            "secs": 10,
+            "nanos": 0
+        },
+        "max_delivery_duration": {
+            "secs": 10,
+            "nanos": 0
+        },
+        "send_metadata_only": false,
+        "labels": {
+            "test_key1": "test_value1",
+            "test_key2": "test_value2"
+        }
+    },
+    "stop_condition": {
+        "last_frame": {
+            "uuid": "0190da91-2ff0-74bf-bf16-867fbca72bad"
+        }
+    },
+    "anchor_keyframe": "$ANCHOR_KEYFRAME",
+    "offset": {
+        "blocks": 5
+    },
+    "attributes": [
+        {
+            "namespace": "key",
+            "name": "value",
+            "values": [
+                {
+                    "confidence": 0.5,
+                    "value": {
+                        "Integer": 1
+                    }
+                },
+                {
+                    "confidence": null,
+                    "value": {
+                        "FloatVector": [
+                            1.0,
+                            2.0,
+                            3.0
+                        ]
+                    }
+                }
+            ],
+            "hint": "Test hint",
+            "is_persistent": true,
+            "is_hidden": false
+        }
+    ]
+}
