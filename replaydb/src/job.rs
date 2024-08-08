@@ -111,6 +111,14 @@ impl SyncJobStopCondition {
     pub fn new(stop_condition: JobStopCondition) -> Self {
         Self(ParkingLotMutex::new(stop_condition))
     }
+
+    pub fn check(&self, message: &Message) -> Result<bool> {
+        self.0.lock().check(message)
+    }
+
+    pub fn setup(&self) -> Result<()> {
+        self.0.lock().setup()
+    }
 }
 
 impl Serialize for SyncJobStopCondition {
@@ -402,6 +410,7 @@ where
     }
 
     async fn run_fast_until_complete(&mut self) -> Result<()> {
+        self.stop_condition.setup()?;
         loop {
             let (m, data) = self.read_message().await?;
             let m = self.prepare_message(m)?;
@@ -416,7 +425,7 @@ where
                 .await?;
 
             self.position += 1;
-            if self.stop_condition.0.lock().check(&m)? {
+            if self.stop_condition.check(&m)? {
                 info!(
                     "Job Id: {} has been finished by stop condition!",
                     Uuid::from_u128(self.id)
@@ -429,6 +438,7 @@ where
 
     async fn run_ts_synchronized_until_complete(&mut self) -> Result<()> {
         let mut last_video_frame_sent = Instant::now();
+        self.stop_condition.setup()?;
         let (prev_message, data) = self.read_message().await?;
         if !prev_message.is_video_frame() {
             let message = format!(
@@ -444,7 +454,7 @@ where
         let mut loop_time = Instant::now();
         let mut last_skew = Duration::from_secs(0);
         loop {
-            log::debug!(target: "replay::db::job", "Loop time: {:?}", loop_time.elapsed());
+            debug!(target: "replay::db::job", "Loop time: {:?}", loop_time.elapsed());
             loop_time = Instant::now();
             let (message, data) = if first_run_data.is_none() {
                 self.read_message().await?
@@ -528,7 +538,7 @@ where
 
             self.position += 1;
 
-            if self.stop_condition.0.lock().check(&message)? {
+            if self.stop_condition.check(&message)? {
                 info!(
                     "Job Id: {} has been finished by stop condition!",
                     Uuid::from_u128(self.id)
