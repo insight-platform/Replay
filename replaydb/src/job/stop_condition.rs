@@ -1,5 +1,6 @@
 use crate::best_ts;
-use anyhow::Result;
+use anyhow::{bail, Result};
+use log::debug;
 use savant_core::message::Message;
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
@@ -39,7 +40,7 @@ impl JobStopCondition {
     pub fn last_frame(uuid: u128) -> Self {
         JobStopCondition::LastFrame {
             uuid: Uuid::from_u128(uuid).to_string(),
-            uuid_u128: Some(uuid),
+            uuid_u128: None,
         }
     }
 
@@ -61,8 +62,27 @@ impl JobStopCondition {
     pub fn real_time_delta_ms(configured_delta: u64) -> Self {
         JobStopCondition::RealTimeDelta {
             configured_delta_ms: configured_delta,
-            initial_ts: Some(Instant::now()),
+            initial_ts: None,
         }
+    }
+
+    pub fn setup(&mut self) -> Result<()> {
+        match self {
+            JobStopCondition::LastFrame { uuid, uuid_u128 } => {
+                debug!("Setting up last frame stop condition with UUID: {}", uuid);
+                *uuid_u128 = Some(Uuid::parse_str(uuid)?.as_u128());
+            }
+            JobStopCondition::RealTimeDelta { initial_ts, .. } => {
+                let now = Instant::now();
+                debug!(
+                    "Setting up real time delta stop condition with initial timestamp: {:?}",
+                    now
+                );
+                *initial_ts = Some(now);
+            }
+            _ => {}
+        }
+        Ok(())
     }
 
     pub fn check(&mut self, message: &Message) -> Result<bool> {
@@ -71,9 +91,9 @@ impl JobStopCondition {
         }
         let message = message.as_video_frame().unwrap();
         match self {
-            JobStopCondition::LastFrame { uuid, uuid_u128 } => {
+            JobStopCondition::LastFrame { uuid_u128, .. } => {
                 if uuid_u128.is_none() {
-                    *uuid_u128 = Some(Uuid::parse_str(uuid)?.as_u128());
+                    bail!("UUID not set for last frame stop condition. Invoke setup() first.");
                 }
                 Ok(message.get_uuid_u128() >= uuid_u128.unwrap())
             }
@@ -116,11 +136,14 @@ impl JobStopCondition {
                 initial_ts,
             } => {
                 if initial_ts.is_none() {
-                    *initial_ts = Some(Instant::now());
-                    return Ok(false);
+                    bail!("Initial timestamp not set for real time delta stop condition. Invoke setup() first.");
                 }
                 let elapsed = initial_ts.map(|i| i.elapsed().as_millis()).unwrap();
                 if elapsed > *configured_delta_ms as u128 {
+                    debug!(
+                        "Elapsed time: {} ms, configured delta: {} ms",
+                        elapsed, configured_delta_ms
+                    );
                     return Ok(true);
                 }
                 Ok(false)
@@ -145,6 +168,7 @@ mod tests {
         let frame_before = gen_properly_filled_frame(true);
         thread::sleep(Duration::from_millis(1));
         let mut stop_condition = JobStopCondition::last_frame(incremental_uuid_v7().as_u128());
+        stop_condition.setup()?;
         assert!(!stop_condition.check(&frame_before.to_message())?);
         thread::sleep(Duration::from_millis(1));
         let frame_after = gen_properly_filled_frame(true);
@@ -192,6 +216,7 @@ mod tests {
     fn test_real_time_delta_stop_condition() -> Result<()> {
         let frame = gen_properly_filled_frame(true);
         let mut stop_condition = JobStopCondition::real_time_delta_ms(500);
+        stop_condition.setup()?;
         assert!(!stop_condition.check(&frame.to_message())?);
         thread::sleep(Duration::from_millis(600));
         assert!(stop_condition.check(&frame.to_message())?);
